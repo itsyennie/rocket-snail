@@ -16,7 +16,21 @@ $('quit').onclick=()=>pet.quit();$('refresh').onclick=()=>action(()=>pet.refresh
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;editing=false;renderPanel();});
 const reasons={all:'모든 메시지',mention:'내 멘션','mention-all':'@all 전체 멘션','mention-here':'@here 그룹 멘션',keyword:'키워드 일치'};
 function items(){return Object.values(state?.items||{}).sort((a,b)=>new Date(a.ts)-new Date(b.ts));}
-function renderChrome(){const list=items();$('badge').textContent=list.length||'';$('count').textContent=list.length;$('status').textContent=state.status||'';$('bubble').hidden=!list.length;$('bubble').textContent=list[0]?`${list[0].room} · ${list[0].text||'(첨부 메시지)'}`:'';$('bubble').onclick=()=>action(()=>pet.open(list[0].id));const look=SnailAppearance.normalize(state.settings.appearance),key=JSON.stringify(look);if(key!==appearanceKey){$('snail-art').innerHTML=SnailAppearance.svg(look,'desktop');appearanceKey=key;}}
+let bubbleKey='';
+function renderChrome(){
+ const list=items(),stack=$('bubble');$('badge').textContent=list.length||'';$('count').textContent=list.length;$('status').textContent=state.status||'';stack.hidden=!list.length;
+ const nextKey=JSON.stringify(list.map(i=>[i.id,i.room,i.text]));
+ if(nextKey!==bubbleKey){
+  const previous=stack.scrollTop,atBottom=stack.scrollHeight-stack.clientHeight-previous<8;
+  stack.replaceChildren();
+  for(const i of [...list].reverse()){
+   const b=button('',()=>pet.open(i.id));b.className='message-bubble';b.dataset.messageId=i.id;
+   const room=el('strong',i.room),text=el('span',i.text||'(첨부 메시지)');b.append(room,text);b.title=`${i.room} · ${i.text||'(첨부 메시지)'}`;stack.append(b);
+  }
+  bubbleKey=nextKey;requestAnimationFrame(()=>{stack.scrollTop=atBottom?stack.scrollHeight:previous});
+ }
+ const look=SnailAppearance.normalize(state.settings.appearance),key=JSON.stringify(look);if(key!==appearanceKey){$('snail-art').innerHTML=SnailAppearance.svg(look,'desktop');appearanceKey=key;}
+}
 function title(heading,description){$('title').replaceChildren(el('h1',heading),el('p',description));}
 function input(value='',type='text'){const n=el('input');n.type=type;n.value=value;return n;}
 function select(value,options){const n=el('select');for(const [v,t] of options){const o=el('option',t);o.value=v;n.append(o)}n.value=value;return n;}
@@ -25,7 +39,7 @@ function button(text,fn,primary=false){const b=el('button',text);if(primary)b.cl
 function card(){const c=el('div');c.className='card';return c;}
 function renderPanel(){if(!panelMode||!state)return;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));const root=$('content'),main=document.querySelector('main');main.classList.toggle('customize-main',tab==='customize');root.classList.toggle('customize-content',tab==='customize');root.replaceChildren();main.scrollTop=0;editing=['connection','rules','customize'].includes(tab);
  if(tab==='connection'){
-  title('서버와 캐릭터 설정','서버 주소는 입력해 두었습니다. 계정의 개인 접근 토큰은 이 화면에서만 입력하세요.');
+  title('서버와 캐릭터 설정','사용하는 Rocket.Chat 서버 주소를 입력하세요. 계정의 개인 접근 토큰은 이 화면에서만 입력하세요.');
   renderPlacement(root);
   const s=structuredClone(state.settings),c=card();root.append(c);
   const url=row(c,'서버 주소',input(s.baseUrl));url.name='baseUrl';
@@ -156,5 +170,5 @@ function renderRules(root){
  const saveBar=el('div');saveBar.className='rules-save-bar';saveBar.append(el('small','방 설정과 키워드 변경사항을 함께 저장합니다.'),button('변경사항 저장',async()=>{await pet.save({settings:{...s,motionEnabled:state.settings.motionEnabled!==false}});toast('방 설정과 키워드를 저장했습니다.');},true));root.append(saveBar);
 }
 pet.onState(v=>{state=v;renderChrome();const motion=document.querySelector('[name=motionEnabled]');if(motion)motion.checked=state.settings.motionEnabled!==false;document.querySelector('[data-placement-form]')?.syncDisplays?.();if(!editing)renderPanel();});
-pet.onGeometry(g=>{const p=$('character');p.style.left=`${g.petLeft}px`;p.style.top=`${g.petTop}px`;p.style.bottom='auto';p.style.width=p.style.height=`${g.petSize}px`;p.classList.remove('reverse');$('snail-art').style.transform=`rotate(${g.rotation||0}deg) scaleX(${g.mirror||1})`;p.dataset.edge=g.edge||'free';p.classList.toggle('paused',g.paused);$('bubble').style.left=`${g.bubbleLeft}px`;$('bubble').style.top=`${g.bubbleTop}px`;$('bubble').style.bottom='auto';});
+pet.onGeometry(g=>{const p=$('character');p.style.left=`${g.petLeft}px`;p.style.top=`${g.petTop}px`;p.style.bottom='auto';p.style.width=p.style.height=`${g.petSize}px`;p.classList.remove('reverse');$('snail-art').style.transform=`rotate(${g.rotation||0}deg) scaleX(${g.mirror||1})`;p.dataset.edge=g.edge||'free';p.classList.toggle('paused',g.paused);$('bubble').style.left=`${g.bubbleLeft}px`;$('bubble').style.top=`${g.bubbleTop}px`;$('bubble').style.height=`${g.bubbleHeight}px`;$('bubble').style.bottom='auto';});
 pet.state().then(v=>{state=v;const requested=new URLSearchParams(location.search).get('tab');if(['customize','connection'].includes(requested))tab=requested;else if(!v.hasToken)tab='connection';renderChrome();renderPanel();});

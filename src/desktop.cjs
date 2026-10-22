@@ -1,11 +1,14 @@
-function layout(area, petX, scale=1,petY=null) {
-  const petSize=Math.round(90*scale),width=Math.min(340,area.width),height=Math.min(Math.max(230,petSize+160),area.height);
+function layout(area, petX, scale=1,petY=null,messageCount=1) {
+  const petSize=Math.round(90*scale),width=Math.min(340,area.width);
   const left=Math.round(Math.max(area.x,Math.min(petX,area.x+area.width-petSize)));
   const windowX=Math.round(Math.max(area.x,Math.min(left-(width-petSize)/2,area.x+area.width-width)));
   const petLeft=left-windowX;
   const top=Math.round(Math.max(area.y,Math.min(petY??area.y+area.height-petSize,area.y+area.height-petSize)));
-  const windowY=Math.round(Math.max(area.y,Math.min(top-(height-petSize),area.y+area.height-height))),petTop=top-windowY;
-  return {bounds:{x:Math.round(windowX),y:Math.round(windowY),width,height},petLeft:Math.round(petLeft),petTop:Math.round(petTop),petSize,bubbleLeft:Math.round(Math.max(4,Math.min(width-264,petLeft+petSize/2-130))),bubbleTop:Math.round(Math.max(0,Math.min(height-72,petTop>=80?petTop-80:petTop+petSize+8)))};
+  const desired=Math.max(1,Math.min(5,messageCount))*80-8,above=top-area.y,below=area.y+area.height-top-petSize;
+  const upward=above>=desired+8||above>=below,bubbleHeight=Math.max(0,Math.min(desired,(upward?above:below)-8));
+  const height=Math.min(Math.max(230,petSize+bubbleHeight+16),area.height);
+  const windowY=Math.round(Math.max(area.y,Math.min(upward?top-(height-petSize):top,area.y+area.height-height))),petTop=top-windowY;
+  return {bounds:{x:Math.round(windowX),y:Math.round(windowY),width,height},petLeft:Math.round(petLeft),petTop:Math.round(petTop),petSize,bubbleHeight,bubbleLeft:Math.round(Math.max(4,Math.min(width-264,petLeft+petSize/2-130))),bubbleTop:Math.round(upward?petTop-bubbleHeight-8:petTop+petSize+8)};
 }
 function beginDrag(position,pointer){return {origin:{...position},start:{...pointer},moved:false};}
 function moveDrag(drag,pointer,area,scale=1){

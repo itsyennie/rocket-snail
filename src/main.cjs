@@ -37,16 +37,16 @@ function renderFrame(cursor){
   if(drag)updateDrag(cursor);
   const a=area(),size=store.data.settings.size,edge=store.data.desktopPlacement.edge;
   if(!drag&&edge!=='free')({x,y}=snapToEdge(a,{x,y},size,edge));
-  const current=layout(a,x,size,y);
+  const messageCount=Object.keys(store.data.items).length;const current=layout(a,x,size,y,messageCount);
   const local={x:cursor.x-current.bounds.x,y:cursor.y-current.bounds.y};
   const hasMessages=Object.keys(store.data.items).length>0;
   const overPet=local.x>=current.petLeft-5&&local.x<=current.petLeft+current.petSize+5&&local.y>=current.petTop-5&&local.y<=current.petTop+current.petSize+5;
   if(!overPet)petHovered=false;
-  const overBubble=hasMessages&&local.x>=current.bubbleLeft&&local.x<=current.bubbleLeft+260&&local.y>=current.bubbleTop&&local.y<=current.bubbleTop+72;
+  const overBubble=hasMessages&&local.x>=current.bubbleLeft&&local.x<=current.bubbleLeft+260&&local.y>=current.bubbleTop&&local.y<=current.bubbleTop+current.bubbleHeight;
   const ignoreMouse=!(drag||overPet||overBubble);if(mouseIgnored!==ignoreMouse){petWindow.setIgnoreMouseEvents(ignoreMouse,{forward:true});mouseIgnored=ignoreMouse;}
   const paused=!!drag||petHovered||store.data.settings.motionEnabled===false||overPet||overBubble||settingsOpen;
   if(!drag)({x,y,direction}=advanceAlongEdge(a,{x,y},size,edge,direction,paused));
-  const next=layout(a,x,size,y);x=next.bounds.x+next.petLeft;if(y!==null)y=next.bounds.y+next.petTop;const actual=petWindow.getBounds();if(['x','y','width','height'].some(key=>actual[key]!==next.bounds[key]))petWindow.setBounds(next.bounds);petWindow.webContents.send('geometry',{...next,...orientation(edge,direction),edge,direction,paused});
+  const next=layout(a,x,size,y,messageCount);x=next.bounds.x+next.petLeft;if(y!==null)y=next.bounds.y+next.petTop;const actual=petWindow.getBounds();if(['x','y','width','height'].some(key=>actual[key]!==next.bounds[key]))petWindow.setBounds(next.bounds);petWindow.webContents.send('geometry',{...next,...orientation(edge,direction),edge,direction,paused});
 }
 function icon(){const n=24,b=Buffer.alloc(n*n*4);for(let y=0;y<n;y++)for(let x=0;x<n;x++){const shell=(x-11)**2+(y-10)**2<65,foot=y>17&&x>2&&x<22;if(shell||foot){const i=(y*n+x)*4;b[i]=shell?100:160;b[i+1]=shell?164:180;b[i+2]=shell?240:70;b[i+3]=255;}}return nativeImage.createFromBitmap(b,{width:n,height:n});}
 function handler(name,fn){ipcMain.handle(name,(event,...args)=>{if(![petWindow,panelWindow].some(w=>w?.webContents===event.sender))throw Error('허용되지 않은 화면');return fn(...args);});}
@@ -144,6 +144,18 @@ async function smokeTest(){
   const desktopLink=new URL(smokeDesktopLink);
   if(desktopLink.protocol!=='rocketchat:'||desktopLink.hostname!=='room'||!desktopLink.searchParams.get('path').endsWith('?msg=demo')||!store.data.items.demo)throw Error('데스크톱 메시지 열기 검증 실패');
   checks.desktopMessage={protocol:desktopLink.protocol,action:desktopLink.hostname,messageRemainsPending:!!store.data.items.demo,registeredApplication:app.getApplicationNameForProtocol(desktopLink.href)};
+  const originalItems=structuredClone(store.data.items),stackPosition={x,y};
+  for(let i=1;i<=6;i++)store.data.items['stack-'+i]={...store.data.items.demo,id:'stack-'+i,text:'여러 메시지 말풍선 테스트 '+i,ts:new Date(Date.now()+i*1000).toISOString()};
+  x=area().x+500;y=area().y+area().height-90*store.data.settings.size;emit();frame();
+  const stackChecks=await petWindow.webContents.executeJavaScript(`(async()=>{
+    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+    const stack=document.getElementById('bubble'),buttons=[...stack.querySelectorAll('.message-bubble')];
+    const result={count:buttons.length,scrollable:stack.scrollHeight>stack.clientHeight,unique:new Set(buttons.map(b=>b.dataset.messageId)).size===buttons.length};
+    for(const b of buttons)await b.onclick();return result;
+  })()`);
+  if(stackChecks.count!==7||!stackChecks.scrollable||!stackChecks.unique||!smokeDesktopLink.includes('demo')||Object.keys(store.data.items).length!==7)throw Error('말풍선 쌓기·개별 열기·대기 유지 검증 실패');
+  checks.messageStack=stackChecks;fs.writeFileSync(path.join(artifacts,'message-stack.png'),(await petWindow.webContents.capturePage()).toPNG());
+  store.data.items=originalItems;({x,y}=stackPosition);emit();frame();
   const previousAppearance=JSON.stringify(store.data.settings.appearance),staleSettings=structuredClone(store.data.settings);
   await panelWindow.webContents.executeJavaScript(`document.querySelector('[data-tab=customize]').click();
     document.querySelector('[data-shell-pattern=stars].appearance-choice').onclick();

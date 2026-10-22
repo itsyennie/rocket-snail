@@ -1,6 +1,6 @@
 {
   "name": "rocket-message-pet",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "description": "Local Rocket.Chat message companion for Windows",
   "main": "src/main.cjs",
@@ -13,5 +13,7 @@
   },
   "devDependencies": {
     "electron": "38.8.6"
-  }
+  },
+  "author": "itsyennie",
+  "license": "SEE LICENSE IN LICENSE.md"
 }

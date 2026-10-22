@@ -82,6 +82,7 @@ app.whenReady().then(async()=>{
   handler('probe',async()=>{const result=await client.probe();status=`Rocket.Chat ${result.version} · 서버 접근 확인`;emit();return result;});
   handler('open-message',async id=>{const item=store.data.items[id]||store.data.archive.find(i=>i.id===id);if(!item)throw Error('메시지를 찾을 수 없습니다.');await openDesktopMessage(store.data.settings.baseUrl,item,smoke?async link=>{smokeDesktopLink=link;}:shell.openExternal);});
   handler('restore',id=>{const item=store.data.archive.find(i=>i.id===id);store.restore(id,client.subs[item?.rid]?.ls);emit();});
+  handler('confirm',id=>{const item=store.data.items[id];if(!item||!store.confirm(id,client.subs[item.rid]?.ls))throw Error('대기 중인 메시지를 찾을 수 없습니다.');emit();frame();return {confirmed:true};});
   handler('refresh',()=>{if(!token||!store.data.settings.userId)throw Error('연결·캐릭터 화면에서 사용자 ID와 개인 접근 토큰을 입력하세요.');return client.running?client.sync():client.start();});
   if(!smoke){tray=new Tray(icon());tray.setToolTip('Rocket Pet');updateTrayMenu();tray.on('double-click',()=>panel(true));}
   const panelQuery={view:'panel'};if(process.argv.includes('--customize'))panelQuery.tab='customize';if(process.argv.includes('--placement'))panelQuery.tab='connection';
@@ -156,6 +157,12 @@ async function smokeTest(){
   if(stackChecks.count!==7||!stackChecks.scrollable||!stackChecks.unique||!smokeDesktopLink.includes('demo')||Object.keys(store.data.items).length!==7)throw Error('말풍선 쌓기·개별 열기·대기 유지 검증 실패');
   checks.messageStack=stackChecks;fs.writeFileSync(path.join(artifacts,'message-stack.png'),(await petWindow.webContents.capturePage()).toPNG());
   store.data.items=originalItems;({x,y}=stackPosition);emit();frame();
+  store.data.items['thread-demo']={...store.data.items.demo,id:'thread-demo',tmid:'thread-parent'};emit();
+  await panelWindow.webContents.executeJavaScript(`document.querySelector('[data-tab=inbox]').click();[...document.querySelector('article[data-message-id="thread-demo"]').querySelectorAll('button')].find(b=>b.textContent==='직접 확인 완료').onclick()`);
+  if(store.data.items['thread-demo']||!store.data.archive.some(i=>i.id==='thread-demo'&&i.archiveReason==='manual'))throw Error('스레드 직접 확인 완료 실패');
+  await panelWindow.webContents.executeJavaScript(`document.querySelector('[data-tab=history]').click();[...document.querySelector('article[data-message-id="thread-demo"]').querySelectorAll('button')].find(b=>b.textContent==='확인 대기로 복구').onclick()`);
+  if(!store.data.items['thread-demo']||store.data.items['thread-demo'].threadUnreadObservedAt)throw Error('스레드 확인 완료 복구 실패');
+  delete store.data.items['thread-demo'];emit();checks.threadConfirmation={localConfirm:true,restorable:true};
   const previousAppearance=JSON.stringify(store.data.settings.appearance),staleSettings=structuredClone(store.data.settings);
   await panelWindow.webContents.executeJavaScript(`document.querySelector('[data-tab=customize]').click();
     document.querySelector('[data-shell-pattern=stars].appearance-choice').onclick();

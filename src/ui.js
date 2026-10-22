@@ -59,9 +59,15 @@ function renderPanel(){if(!panelMode||!state)return;document.querySelectorAll('n
  } else if(tab==='customize'){
   renderCustomization(root);
  } else {
-  const history=tab==='history';title(history?'최근 자동 정리':'확인 대기',history?'7일 이내, 최근 100개를 복구할 수 있습니다. 복구 후에는 다음 읽음 갱신까지 유지됩니다.':'원본 메시지를 열어 확인하세요. 읽음 시각이 불명확하거나 스레드 답글이면 보류합니다.');
-  const list=history?state.archive:items();if(!list.length){const empty=el('div',history?'아직 자동 정리된 메시지가 없습니다.':'대기 중인 메시지가 없습니다.');empty.className='empty';root.append(empty)}
-  for(const i of list){const a=el('article'),meta=el('div',`${i.room} · ${reasons[i.reason]||i.reason}${i.tmid?' · 스레드 확인 보류':''}${i.restoredAfterLs?' · 복구됨':''}`);meta.className='message-meta';const text=el('div',i.text||'(첨부 메시지)');text.className='message-text';const actions=el('div');actions.className='actions';actions.append(button('데스크톱 앱에서 열기',()=>pet.open(i.id)));if(history)actions.append(button('확인 대기로 복구',()=>pet.restore(i.id)));a.append(meta,text,actions);root.append(a);}
+  const history=tab==='history';title(history?'최근 정리':'확인 대기',history?'7일 이내, 최근 100개를 복구할 수 있습니다. 복구 후에는 새로운 읽음 변화를 확인할 때까지 유지됩니다.':'서버의 읽음 정보를 확인하면 자동 정리합니다. 이미 읽은 스레드가 남아 있다면 직접 확인 완료를 누르세요.');
+  const list=history?state.archive:items();if(!list.length){const empty=el('div',history?'아직 정리된 메시지가 없습니다.':'대기 중인 메시지가 없습니다.');empty.className='empty';root.append(empty)}
+  for(const i of list){
+    const a=el('article'),meta=el('div',`${i.room} · ${reasons[i.reason]||i.reason}${i.tmid?' · 스레드 답글':''}${i.restoredAfterLs?' · 복구됨':''}${history&&i.archiveReason==='manual'?' · 직접 확인 완료':''}`);meta.className='message-meta';
+    const text=el('div',i.text||'(첨부 메시지)');text.className='message-text';const actions=el('div');actions.className='actions';actions.append(button('데스크톱 앱에서 열기',()=>pet.open(i.id)));
+    if(history)actions.append(button('확인 대기로 복구',()=>pet.restore(i.id)));
+    else if(i.tmid){const confirm=button('직접 확인 완료',()=>pet.confirm(i.id));confirm.title='이 앱의 확인 대기에서 정리합니다. Rocket.Chat 읽음 상태는 변경하지 않습니다.';actions.append(confirm);}
+    a.dataset.messageId=i.id;a.append(meta,text,actions);root.append(a);
+  }
  }
 }
 function renderPlacement(root){

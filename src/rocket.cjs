@@ -4,7 +4,7 @@ const {READ_ENDPOINTS,serverUrl,timestamp,modernHistory,historyRequest}=require(
 class RocketClient extends EventEmitter {
   constructor(store,getToken,{fetchImpl=fetch,WebSocketImpl=WebSocket}={}) {
     super();Object.assign(this,{store,getToken,fetchImpl,WebSocketImpl});
-    this.rooms={};this.subs={};this.running=false;this.generation=0;this.jobs=new Map();this.subscribed=new Set();this.retry=1000;
+    this.rooms={};this.subs={};this.running=false;this.generation=0;this.jobs=new Map();this.subscribed=new Set();this.retry=1000;this.subscriptionRevision=0;this.subscriptionUpdates=new Map();
   }
   get settings(){return this.store.data.settings;}
   status(text){this.emit('status',text);}
@@ -34,17 +34,18 @@ class RocketClient extends EventEmitter {
   }
   async sync() {
     if(this.syncing||!this.running)return;
-    this.syncing=true;const generation=this.generation;let warnings=[];
+    this.syncing=true;const generation=this.generation,revision=this.subscriptionRevision;let warnings=[];
     try {
       const [rooms,subscriptions]=await Promise.all([this.api('rooms.get'),this.api('subscriptions.get')]);
       if(generation!==this.generation)return;
       const roomById=Object.fromEntries((rooms.update||[]).map(r=>[r._id,r]));
       this.subs=Object.fromEntries((subscriptions.update||[]).map(s=>[s.rid,s]));this.rooms={};
+      for(const [rid,entry] of this.subscriptionUpdates)if(entry.revision>revision){if(entry.subscription)this.subs[rid]=entry.subscription;else delete this.subs[rid];}
       for(const sub of Object.values(this.subs)) {
         const room=roomById[sub.rid]||sub;
         this.rooms[sub.rid]={rid:sub.rid,t:room.t||sub.t,name:sub.name||room.name||sub.rid,displayName:sub.fname||room.fname||sub.name||room.name||sub.rid};
       }
-      this.subscribeRooms();this.emit('change');
+      this.store.observeThreadReads(this.subs);this.subscribeRooms();this.emit('change');
       for(const room of Object.values(this.rooms)) {
         const mode=this.settings.rooms?.[room.rid]?.mode||(room.t==='d'?this.settings.dmMode:this.settings.defaultMode);
         if(mode==='ignore'||!['c','p','d'].includes(room.t))continue;
@@ -82,7 +83,14 @@ class RocketClient extends EventEmitter {
   accept(message) {
     const room=this.rooms[message?.rid];if(!room)return;
     const match=matchMessage(message,room,this.settings,this.settings.userId);
-    if(match&&this.store.add(message,room,match))this.emit('change');
+    if(match&&this.store.add(message,room,match)){this.store.observeThreadReads?.(this.subs);this.emit('change');}
+  }
+  acceptSubscription(action,subscription) {
+    if(!['inserted','updated','removed'].includes(action)||!subscription?.rid||subscription.u?._id&&subscription.u._id!==this.settings.userId)return;
+    const rid=subscription.rid;
+    this.subscriptionUpdates.set(rid,{revision:++this.subscriptionRevision,subscription:action==='removed'?null:subscription});
+    if(action==='removed')delete this.subs[rid];else this.subs[rid]=subscription;
+    this.store.observeThreadReads(this.subs);this.store.reconcile(this.subs,readDecision);this.emit('change');
   }
   send(value){if(this.ws?.readyState===1)this.ws.send(JSON.stringify(value));}
   subscribeRooms() {
@@ -104,10 +112,11 @@ class RocketClient extends EventEmitter {
       if(packet.msg==='connected')this.send({msg:'method',method:'login',id:'login',params:[{resume:this.getToken()}]});
       if(packet.msg==='result'&&packet.id==='login') {
         if(packet.error){this.stop();this.status('실시간 인증 실패 · 토큰과 API 권한을 확인하세요.');return;}
-        this.authenticated=true;this.retry=1000;this.subscribeRooms();void this.sync();
+        this.authenticated=true;this.retry=1000;this.send({msg:'sub',id:'user-subscriptions',name:'stream-notify-user',params:[`${this.settings.userId}/subscriptions-changed`,false]});this.subscribeRooms();void this.sync();
       }
       if(packet.msg==='nosub'&&packet.error)this.status('일부 방의 실시간 구독을 서버가 거절했습니다.');
       if(packet.msg==='changed'&&packet.collection==='stream-room-messages')this.accept(packet.fields?.args?.[0]);
+      if(packet.msg==='changed'&&packet.collection==='stream-notify-user'&&packet.fields?.eventName===`${this.settings.userId}/subscriptions-changed`)this.acceptSubscription(...(packet.fields.args||[]));
     };
     ws.onerror=()=>this.status('실시간 연결 오류 · 재연결 대기');
     ws.onclose=()=>{clearInterval(this.heartbeat);this.authenticated=false;if(!this.running||generation!==this.generation)return;

@@ -39,11 +39,16 @@ function matchMessage(message, room, settings, userId) {
   return {reason: mode === 'all' ? 'all' : mentioned ? special ? `mention-${special}` : 'mention' : 'keyword', keyword: keyword?.term || null};
 }
 function readDecision(item, subscription) {
+  if(item.tmid) {
+    const fields=['tunread','tunreadUser','tunreadGroup'];
+    const valid=subscription&&Array.isArray(subscription.tunread)&&fields.every(k=>subscription[k]===undefined||Array.isArray(subscription[k])&&subscription[k].every(id=>typeof id==='string'));
+    if(!valid||fields.some(k=>subscription[k]?.includes(item.tmid)))return 'hold';
+    return item.threadUnreadObservedAt>timestamp(item.ts)&&item.threadReadConfirmedAt>item.threadUnreadObservedAt?'archive':'hold';
+  }
   if (!subscription || !subscription.ls || !item.ts) return 'hold';
   const seen = timestamp(subscription.ls);
   const sent = timestamp(item.ts);
   if (!Number.isFinite(seen) || !Number.isFinite(sent)) return 'hold';
-  if(item.tmid) return 'hold'; // Room ls alone cannot prove a thread reply was read.
   if(item.restoredAfterLs!=null && seen<=item.restoredAfterLs) return 'hold';
   // ls is room-level last-seen activity. Equal timestamps may be ambiguous.
   return seen > sent ? 'archive' : 'hold';

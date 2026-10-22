@@ -1,0 +1,17 @@
+{
+  "name": "rocket-message-pet",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Local Rocket.Chat message companion for Windows",
+  "main": "src/main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.cjs",
+    "smoke": "electron . --smoke-test",
+    "package": "node scripts/package.cjs",
+    "release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release.ps1"
+  },
+  "devDependencies": {
+    "electron": "38.8.6"
+  }
+}

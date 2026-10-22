@@ -1,0 +1,12 @@
+const fs=require('node:fs'),path=require('node:path');
+const root=path.resolve(__dirname,'..'),out=process.argv[2]?path.resolve(process.argv[2]):path.join(root,'dist','RocketPet-Windows-x64');
+if(process.platform!=='win32')throw Error('Windows에서 빌드하세요.');
+const runtime=path.join(root,'node_modules','electron','dist');
+if(!fs.existsSync(path.join(runtime,'electron.exe')))throw Error('먼저 npm ci를 실행하세요.');
+fs.mkdirSync(out,{recursive:true});fs.cpSync(runtime,out,{recursive:true});
+fs.renameSync(path.join(out,'electron.exe'),path.join(out,'RocketPet.exe'));
+const app=path.join(out,'resources','app');fs.mkdirSync(app,{recursive:true});
+fs.cpSync(path.join(root,'src'),path.join(app,'src'),{recursive:true});
+const pkg=require('../package.json');fs.writeFileSync(path.join(app,'package.json'),JSON.stringify({name:pkg.name,version:pkg.version,main:pkg.main,private:true},null,2));
+fs.copyFileSync(path.join(root,'README.md'),path.join(out,'README.md'));
+console.log(out);

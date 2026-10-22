@@ -1,0 +1,10 @@
+node_modules/
+.npm-cache/
+dist/
+artifacts/
+test/tmp-*/
+.env
+.env.*
+*.log
+credential.bin
+state.json

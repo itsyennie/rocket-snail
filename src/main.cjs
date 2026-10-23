@@ -1,12 +1,14 @@
 const {app,BrowserWindow,ipcMain,shell,safeStorage,screen,Tray,Menu,nativeImage}=require('electron');
 const fs=require('node:fs');const path=require('node:path');const {pathToFileURL}=require('node:url');
 const {Store}=require('./store.cjs');const {RocketClient}=require('./rocket.cjs');
+const startup=require('./startup.cjs');let startupRegistration={registered:false,enabled:false};
 const {openDesktopMessage}=require('./desktop-link.cjs');const {validateSettings}=require('./settings.cjs');const {layout,beginDrag,moveDrag,savedPosition,restorePosition}=require('./desktop.cjs');
 const {normalize:normalizeAppearance}=require('./appearance.js');
 const {normalizePlacement,chooseDisplay,snapToEdge,advanceAlongEdge,orientation}=require('./placement.cjs');
 const smoke=process.argv.includes('--smoke-test');const artifacts=path.join(__dirname,'..','artifacts');
 const smokeTimeout=smoke?setTimeout(()=>{console.error('Smoke verification timed out');app.exit(1);},45000):null;
 app.setName('Rocket Pet');
+if(process.platform==='win32')app.setAppUserModelId('itsyennie.RocketSnail');
 if(smoke)app.setPath('userData',path.join(artifacts,'smoke-profile'));
 else app.setPath('userData',path.join(app.getPath('appData'),'DexterRocketPet'));
 if(!smoke&&!app.requestSingleInstanceLock())app.exit(0);
@@ -14,7 +16,7 @@ app.on('second-instance',()=>{if(panelWindow)panel(true);});
 let petWindow,panelWindow,tray,store,client,token='',status='계정 연결을 기다리고 있어요',x,y=null,displayId,drag=null,petHovered=false,direction=1,timer,smokeDesktopLink,smokePanelOpens=0,mouseIgnored,settingsOpen=false;
 function credentials(){return path.join(app.getPath('userData'),'credential.bin');}
 function availableDisplays(){const primary=screen.getPrimaryDisplay().id;return screen.getAllDisplays().map((d,i)=>({id:String(d.id),label:d.label||`모니터 ${i+1}`,number:i+1,primary:d.id===primary,width:Math.round(d.size.width*d.scaleFactor),height:Math.round(d.size.height*d.scaleFactor)}));}
-function state(){return {...store.data,rooms:Object.values(client?.rooms||{}),displays:availableDisplays(),activeDisplayId:String(display().id),status,hasToken:!!token};}
+function state(){return {...store.data,startupRegistration,rooms:Object.values(client?.rooms||{}),displays:availableDisplays(),activeDisplayId:String(display().id),status,hasToken:!!token};}
 function emit(){for(const win of [petWindow,panelWindow])if(win&&!win.isDestroyed())win.webContents.send('state',state());}
 function configure(win){win.webContents.setWindowOpenHandler(()=>({action:'deny'}));win.webContents.on('will-navigate',e=>e.preventDefault());}
 function panel(show=true){settingsOpen=!!show;if(show){emit();if(smoke){smokePanelOpens++;frame();return;}panelWindow.show();panelWindow.focus();}else panelWindow.hide();frame();}
@@ -54,6 +56,8 @@ function setMotion(enabled){if(typeof enabled!=='boolean')throw Error('움직임
 function updateTrayMenu(){if(!tray)return;tray.setContextMenu(Menu.buildFromTemplate([{label:'메시지와 설정',click:()=>panel(true)},{label:'캐릭터 움직이기',type:'checkbox',checked:store.data.settings.motionEnabled!==false,click:item=>{try{setMotion(item.checked)}catch{status='움직임 설정을 저장하지 못했습니다.';emit();}}},{type:'separator'},{label:'종료',click:()=>app.quit()}]));}
 app.whenReady().then(async()=>{
   store=new Store(path.join(app.getPath('userData'),'state.json'));
+  if(!smoke){try{startupRegistration=startup.registration(app,process.execPath);if(store.data.settings.startup&&(!startupRegistration.registered||startupRegistration.enabled))startupRegistration=await startup.apply(app,process.execPath,true);}catch{status='Windows 자동 실행 등록을 확인하지 못했습니다.';}}
+  if(process.argv.includes('--startup-check'))console.log(JSON.stringify({startupRegistration}));
   let credentialState='missing';
   if(!smoke)try{const saved=JSON.parse(safeStorage.decryptString(fs.readFileSync(credentials())));if(saved.baseUrl===store.data.settings.baseUrl&&saved.userId===store.data.settings.userId){token=typeof saved.token==='string'?saved.token:'';credentialState=token?'restored':'empty';}else credentialState='account-mismatch';}catch(e){credentialState=e.code==='ENOENT'?'missing':'restore-failed';}
   if(credentialState==='restore-failed')status='저장된 토큰을 복원하지 못했습니다. 기존 설정은 유지되어 있습니다.';
@@ -69,6 +73,7 @@ app.whenReady().then(async()=>{
   panelWindow.on('show',()=>{settingsOpen=true;frame();});panelWindow.on('hide',()=>{settingsOpen=false;frame();});
   handler('state',()=>state());handler('interactive',on=>panel(!!on));handler('quit',()=>app.quit());
   handler('set-motion',setMotion);
+  handler('set-startup',async enabled=>{if(typeof enabled!=='boolean')throw Error('자동 실행 설정을 확인하세요.');startupRegistration=smoke?{registered:enabled,enabled}:await startup.apply(app,process.execPath,enabled);store.data.settings.startup=enabled;store.save();emit();return startupRegistration;});
   handler('set-placement',setPlacement);
   handler('drag-start',startDrag);handler('drag-end',()=>finishDrag());
   handler('hover',hovered=>{if(typeof hovered!=='boolean')return;petHovered=hovered;frame();});
@@ -79,7 +84,7 @@ app.whenReady().then(async()=>{
     const candidate=String(newToken||'').trim()||token;
     if(candidate&&!next.userId)throw Error('사용자 ID를 입력하세요.');
     if(newToken&&newToken.trim()&&!safeStorage.isEncryptionAvailable())throw Error('Windows 암호화 저장을 사용할 수 없습니다.');
-    if(next.startup!==old.startup&&!smoke)app.setLoginItemSettings({openAtLogin:next.startup,path:process.execPath,args:app.isPackaged?['--startup']:[app.getAppPath(),'--startup']});
+    if(!smoke)startupRegistration=await startup.apply(app,process.execPath,next.startup);
     if(newToken&&newToken.trim()) {fs.mkdirSync(app.getPath('userData'),{recursive:true});fs.writeFileSync(credentials(),safeStorage.encryptString(JSON.stringify({baseUrl:next.baseUrl,userId:next.userId,token:candidate})));}
     store.data.settings=next;store.save();token=candidate;emit();if(token&&!smoke)void client.start();return {saved:true};
   });

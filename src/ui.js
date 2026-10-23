@@ -50,8 +50,10 @@ function renderPanel(){if(!panelMode||!state)return;document.querySelectorAll('n
   const motion=row(c,'캐릭터 움직이기',input('','checkbox'));motion.name='motionEnabled';motion.checked=s.motionEnabled!==false;
   motion.onchange=async()=>{motion.disabled=true;const result=await action(()=>pet.setMotion(motion.checked));if(!result)motion.checked=state.settings.motionEnabled!==false;motion.disabled=false;};
   c.append(el('p','끄면 캐릭터가 그 자리에서 멈춥니다. 움직임 설정은 즉시 저장됩니다.'));
-  const startup=row(c,'Windows 시작 시 실행',input('','checkbox'));startup.checked=s.startup;
-  const actions=el('div');actions.className='actions';actions.append(button('저장하고 연결',async()=>{await pet.save({settings:{...s,baseUrl:url.value,userId:user.value,size:Number(size.value),startup:startup.checked,motionEnabled:state.settings.motionEnabled!==false},newToken:token.value});token.value='';toast('설정을 저장했습니다. 계정이 입력되어 있으면 연결을 시작합니다.');},true),button('서버 접근 확인',async()=>{const r=await pet.probe();toast(`Rocket.Chat ${r.version} · 공개 서버 정보 접근 성공`)}));c.append(actions);
+  const startup=row(c,'Windows 시작 시 실행',input('','checkbox'));startup.name='startup';startup.checked=s.startup;
+  const startupNote=el('p',state.startupRegistration?.enabled?'Windows 로그인 시 자동 실행이 등록되어 있습니다.':'체크하면 즉시 저장하고 Windows 자동 실행에 등록합니다.');c.append(startupNote);
+  startup.onchange=async()=>{startup.disabled=true;const result=await action(()=>pet.setStartup(startup.checked));startup.checked=state.settings.startup;startup.disabled=false;startupNote.textContent=result?(result.enabled?'Windows 로그인 시 자동 실행이 등록되어 있습니다.':'Windows 자동 실행을 해제했습니다.'):'자동 실행 등록을 확인하지 못했습니다. 다시 시도해 주세요.';};
+  const actions=el('div');actions.className='actions';actions.append(button('저장하고 연결',async()=>{await pet.save({settings:{...s,baseUrl:url.value,userId:user.value,size:Number(size.value),startup:state.settings.startup,motionEnabled:state.settings.motionEnabled!==false},newToken:token.value});token.value='';toast('설정을 저장했습니다. 계정이 입력되어 있으면 연결을 시작합니다.');},true),button('서버 접근 확인',async()=>{const r=await pet.probe();toast(`Rocket.Chat ${r.version} · 공개 서버 정보 접근 성공`)}));c.append(actions);
   const note=el('p','말풍선이나 메시지의 열기 버튼을 누르면 설치된 Rocket.Chat 데스크톱 앱에서 원본 메시지가 열립니다. 자동 정리는 서버의 읽음 정보를 받은 뒤에 이루어집니다.');note.className='note';root.append(note);
   root.append(button('달팽이 꾸미기',()=>document.querySelector('[data-tab=customize]').click()));
  } else if(tab==='rules'){

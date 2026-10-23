@@ -7,10 +7,10 @@ const {normalizePlacement,chooseDisplay,snapToEdge,advanceAlongEdge,orientation}
 const smoke=process.argv.includes('--smoke-test');const artifacts=path.join(__dirname,'..','artifacts');
 const smokeTimeout=smoke?setTimeout(()=>{console.error('Smoke verification timed out');app.exit(1);},45000):null;
 app.setName('Rocket Pet');
-if(!smoke&&!app.requestSingleInstanceLock())app.exit(0);
-app.on('second-instance',()=>{if(panelWindow)panel(true);});
 if(smoke)app.setPath('userData',path.join(artifacts,'smoke-profile'));
 else app.setPath('userData',path.join(app.getPath('appData'),'DexterRocketPet'));
+if(!smoke&&!app.requestSingleInstanceLock())app.exit(0);
+app.on('second-instance',()=>{if(panelWindow)panel(true);});
 let petWindow,panelWindow,tray,store,client,token='',status='계정 연결을 기다리고 있어요',x,y=null,displayId,drag=null,petHovered=false,direction=1,timer,smokeDesktopLink,smokePanelOpens=0,mouseIgnored,settingsOpen=false;
 function credentials(){return path.join(app.getPath('userData'),'credential.bin');}
 function availableDisplays(){const primary=screen.getPrimaryDisplay().id;return screen.getAllDisplays().map((d,i)=>({id:String(d.id),label:d.label||`모니터 ${i+1}`,number:i+1,primary:d.id===primary,width:Math.round(d.size.width*d.scaleFactor),height:Math.round(d.size.height*d.scaleFactor)}));}
@@ -54,7 +54,11 @@ function setMotion(enabled){if(typeof enabled!=='boolean')throw Error('움직임
 function updateTrayMenu(){if(!tray)return;tray.setContextMenu(Menu.buildFromTemplate([{label:'메시지와 설정',click:()=>panel(true)},{label:'캐릭터 움직이기',type:'checkbox',checked:store.data.settings.motionEnabled!==false,click:item=>{try{setMotion(item.checked)}catch{status='움직임 설정을 저장하지 못했습니다.';emit();}}},{type:'separator'},{label:'종료',click:()=>app.quit()}]));}
 app.whenReady().then(async()=>{
   store=new Store(path.join(app.getPath('userData'),'state.json'));
-  if(!smoke)try{const saved=JSON.parse(safeStorage.decryptString(fs.readFileSync(credentials())));if(saved.baseUrl===store.data.settings.baseUrl&&saved.userId===store.data.settings.userId)token=saved.token;}catch{}
+  let credentialState='missing';
+  if(!smoke)try{const saved=JSON.parse(safeStorage.decryptString(fs.readFileSync(credentials())));if(saved.baseUrl===store.data.settings.baseUrl&&saved.userId===store.data.settings.userId){token=typeof saved.token==='string'?saved.token:'';credentialState=token?'restored':'empty';}else credentialState='account-mismatch';}catch(e){credentialState=e.code==='ENOENT'?'missing':'restore-failed';}
+  if(credentialState==='restore-failed')status='저장된 토큰을 복원하지 못했습니다. 기존 설정은 유지되어 있습니다.';
+  if(credentialState==='account-mismatch')status='저장된 토큰의 서버·계정이 현재 설정과 다릅니다.';
+  if(process.argv.includes('--connection-check'))console.log(JSON.stringify({credentialState,hasToken:!!token}));
   client=new RocketClient(store,()=>token);client.on('change',emit);client.on('status',s=>{status=s;emit();});
   const webPreferences={preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:!smoke};
   const placement=store.data.desktopPlacement;displayId=placement.displayId==='primary'?screen.getPrimaryDisplay().id:Number(placement.displayId);({x,y}=restorePosition(area(),store.data.desktopPosition,store.data.settings.size));if(placement.edge!=='free')({x,y}=snapToEdge(area(),{x,y},store.data.settings.size,placement.edge));

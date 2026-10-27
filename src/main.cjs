@@ -1,4 +1,4 @@
-const {app,BrowserWindow,ipcMain,shell,safeStorage,screen,Tray,Menu,nativeImage}=require('electron');
+const {app,BrowserWindow,ipcMain,shell,safeStorage,screen,Tray,Menu,nativeImage,powerMonitor,dialog}=require('electron');
 const fs=require('node:fs');const path=require('node:path');const {pathToFileURL}=require('node:url');
 const {Store}=require('./store.cjs');const {RocketClient}=require('./rocket.cjs');
 const startup=require('./startup.cjs');let startupRegistration={registered:false,enabled:false};
@@ -12,15 +12,24 @@ if(process.platform==='win32')app.setAppUserModelId('itsyennie.RocketSnail');
 if(smoke)app.setPath('userData',path.join(artifacts,'smoke-profile'));
 else app.setPath('userData',path.join(app.getPath('appData'),'DexterRocketPet'));
 if(!smoke&&!app.requestSingleInstanceLock())app.exit(0);
-app.on('second-instance',()=>{if(panelWindow)panel(true);});
+app.on('second-instance',(_event,args)=>{showPet('second-instance');if(panelWindow&&!args.includes('--startup'))panel(true);});
+app.on('activate',()=>showPet('activate'));
+const record=require('./diagnostics.cjs').createDiagnostics(path.join(app.getPath('userData'),'app.log'));
+record('starting',{startup:process.argv.includes('--startup'),version:app.getVersion()});
+process.on('uncaughtExceptionMonitor',e=>record('uncaught-error',{errorName:e.name,code:e.code}));
 let petWindow,panelWindow,tray,store,client,token='',status='계정 연결을 기다리고 있어요',x,y=null,displayId,drag=null,petHovered=false,direction=1,timer,smokeDesktopLink,smokePanelOpens=0,mouseIgnored,settingsOpen=false;
 function credentials(){return path.join(app.getPath('userData'),'credential.bin');}
 function availableDisplays(){const primary=screen.getPrimaryDisplay().id;return screen.getAllDisplays().map((d,i)=>({id:String(d.id),label:d.label||`모니터 ${i+1}`,number:i+1,primary:d.id===primary,width:Math.round(d.size.width*d.scaleFactor),height:Math.round(d.size.height*d.scaleFactor)}));}
 function state(){return {...store.data,startupRegistration,rooms:Object.values(client?.rooms||{}),displays:availableDisplays(),activeDisplayId:String(display().id),status,hasToken:!!token};}
-function emit(){for(const win of [petWindow,panelWindow])if(win&&!win.isDestroyed())win.webContents.send('state',state());}
+function sendWindow(win,channel,value){if(!win||win.isDestroyed()||win.webContents.isDestroyed()||win.webContents.isCrashed()||win.webContents.isLoadingMainFrame())return;try{win.webContents.send(channel,value);}catch(e){record('window-send-failed',{errorName:e.name,code:e.code});}}
+function emit(){for(const win of [petWindow,panelWindow])sendWindow(win,'state',state());}
 function configure(win){win.webContents.setWindowOpenHandler(()=>({action:'deny'}));win.webContents.on('will-navigate',e=>e.preventDefault());}
+function showPet(reason='requested'){
+ if(!petWindow||petWindow.isDestroyed()||app.quitting)return;
+ try{if(petWindow.isMinimized())petWindow.restore();petWindow.setAlwaysOnTop(true);petWindow.showInactive();refreshDisplays();record('pet-shown',{reason,visible:petWindow.isVisible()});}catch(e){record('visibility-failed',{reason,errorName:e.name,code:e.code});}
+}
 function panel(show=true){settingsOpen=!!show;if(show){emit();if(smoke){smokePanelOpens++;frame();return;}panelWindow.show();panelWindow.focus();}else panelWindow.hide();frame();}
-function display(){return chooseDisplay(screen.getAllDisplays(),screen.getPrimaryDisplay().id,displayId);}
+function display(){return chooseDisplay(screen.getAllDisplays().filter(d=>d.workArea.width>0&&d.workArea.height>0),screen.getPrimaryDisplay().id,displayId)||screen.getPrimaryDisplay();}
 function area(){return display().workArea;}
 function startDrag(){const a=area(),g=layout(a,x,store.data.settings.size,y);drag=beginDrag({x:g.bounds.x+g.petLeft,y:g.bounds.y+g.petTop},screen.getCursorScreenPoint());frame();return {started:true};}
 function updateDrag(pointer){if(!drag)return;const distance=Math.hypot(pointer.x-drag.start.x,pointer.y-drag.start.y);if(drag.moved||distance>=5)displayId=screen.getDisplayNearestPoint(pointer).id;const next=moveDrag(drag,pointer,area(),store.data.settings.size);x=next.x;if(drag.moved)y=next.y;}
@@ -32,10 +41,10 @@ function setPlacement(value){
   const restored=restorePosition(area(),ratio,store.data.settings.size);({x,y}=snapToEdge(area(),restored,store.data.settings.size,next.edge));
   store.data.desktopPlacement=next;store.data.desktopPosition=savedPosition(area(),{x,y},display().id,store.data.settings.size);store.save();emit();frame();return {placement:next};
 }
-function refreshDisplays(){if(!store||!petWindow)return;const selected=store.data.desktopPlacement;displayId=selected.displayId==='primary'?screen.getPrimaryDisplay().id:Number(selected.displayId);drag=null;petHovered=false;({x,y}=restorePosition(area(),store.data.desktopPosition,store.data.settings.size));({x,y}=snapToEdge(area(),{x,y},store.data.settings.size,selected.edge));frame();emit();}
+function refreshDisplays(){if(!store||!petWindow||!screen.getAllDisplays().some(d=>d.workArea.width>0&&d.workArea.height>0))return;const selected=store.data.desktopPlacement;displayId=selected.displayId==='primary'?screen.getPrimaryDisplay().id:Number(selected.displayId);drag=null;petHovered=false;({x,y}=restorePosition(area(),store.data.desktopPosition,store.data.settings.size));({x,y}=snapToEdge(area(),{x,y},store.data.settings.size,selected.edge));frame();emit();}
 function frame(){return renderFrame(screen.getCursorScreenPoint());}
 function renderFrame(cursor){
-  if(!petWindow||petWindow.isDestroyed())return;
+  if(!petWindow||petWindow.isDestroyed()||petWindow.webContents.isDestroyed()||petWindow.webContents.isCrashed()||!screen.getAllDisplays().some(d=>d.workArea.width>0&&d.workArea.height>0))return;
   if(drag)updateDrag(cursor);
   const a=area(),size=store.data.settings.size,edge=store.data.desktopPlacement.edge;
   if(!drag&&edge!=='free')({x,y}=snapToEdge(a,{x,y},size,edge));
@@ -48,13 +57,15 @@ function renderFrame(cursor){
   const ignoreMouse=!(drag||overPet||overBubble);if(mouseIgnored!==ignoreMouse){petWindow.setIgnoreMouseEvents(ignoreMouse,{forward:true});mouseIgnored=ignoreMouse;}
   const paused=!!drag||petHovered||store.data.settings.motionEnabled===false||overPet||overBubble||settingsOpen;
   if(!drag)({x,y,direction}=advanceAlongEdge(a,{x,y},size,edge,direction,paused));
-  const next=layout(a,x,size,y,messageCount);x=next.bounds.x+next.petLeft;if(y!==null)y=next.bounds.y+next.petTop;const actual=petWindow.getBounds();if(['x','y','width','height'].some(key=>actual[key]!==next.bounds[key]))petWindow.setBounds(next.bounds);petWindow.webContents.send('geometry',{...next,...orientation(edge,direction),edge,direction,paused});
+  const next=layout(a,x,size,y,messageCount);x=next.bounds.x+next.petLeft;if(y!==null)y=next.bounds.y+next.petTop;const actual=petWindow.getBounds();if(['x','y','width','height'].some(key=>actual[key]!==next.bounds[key]))petWindow.setBounds(next.bounds);sendWindow(petWindow,'geometry',{...next,...orientation(edge,direction),edge,direction,paused});
 }
 function icon(){const n=24,b=Buffer.alloc(n*n*4);for(let y=0;y<n;y++)for(let x=0;x<n;x++){const shell=(x-11)**2+(y-10)**2<65,foot=y>17&&x>2&&x<22;if(shell||foot){const i=(y*n+x)*4;b[i]=shell?100:160;b[i+1]=shell?164:180;b[i+2]=shell?240:70;b[i+3]=255;}}return nativeImage.createFromBitmap(b,{width:n,height:n});}
 function handler(name,fn){ipcMain.handle(name,(event,...args)=>{if(![petWindow,panelWindow].some(w=>w?.webContents===event.sender))throw Error('허용되지 않은 화면');return fn(...args);});}
 function setMotion(enabled){if(typeof enabled!=='boolean')throw Error('움직임 설정을 확인하세요.');store.data.settings.motionEnabled=enabled;store.save();updateTrayMenu();emit();frame();return {motionEnabled:enabled};}
-function updateTrayMenu(){if(!tray)return;tray.setContextMenu(Menu.buildFromTemplate([{label:'메시지와 설정',click:()=>panel(true)},{label:'캐릭터 움직이기',type:'checkbox',checked:store.data.settings.motionEnabled!==false,click:item=>{try{setMotion(item.checked)}catch{status='움직임 설정을 저장하지 못했습니다.';emit();}}},{type:'separator'},{label:'종료',click:()=>app.quit()}]));}
+function updateTrayMenu(){if(!tray)return;tray.setContextMenu(Menu.buildFromTemplate([{label:'달팽이 다시 표시',click:()=>showPet('tray')},{label:'메시지와 설정',click:()=>panel(true)},{label:'캐릭터 움직이기',type:'checkbox',checked:store.data.settings.motionEnabled!==false,click:item=>{try{setMotion(item.checked)}catch{status='움직임 설정을 저장하지 못했습니다.';emit();}}},{type:'separator'},{label:'종료',click:()=>app.quit()}]));}
 app.whenReady().then(async()=>{
+  record('ready');
+  for(let attempt=0;!screen.getAllDisplays().some(d=>d.workArea.width>0&&d.workArea.height>0);attempt++){if(attempt>=60)throw Error('Display unavailable');if(attempt===0)record('waiting-for-display');await new Promise(resolve=>setTimeout(resolve,500));}
   store=new Store(path.join(app.getPath('userData'),'state.json'));
   if(!smoke){try{startupRegistration=startup.registration(app,process.execPath);if(store.data.settings.startup&&(!startupRegistration.registered||startupRegistration.enabled))startupRegistration=await startup.apply(app,process.execPath,true);}catch{status='Windows 자동 실행 등록을 확인하지 못했습니다.';}}
   if(process.argv.includes('--startup-check'))console.log(JSON.stringify({startupRegistration}));
@@ -63,12 +74,23 @@ app.whenReady().then(async()=>{
   if(credentialState==='restore-failed')status='저장된 토큰을 복원하지 못했습니다. 기존 설정은 유지되어 있습니다.';
   if(credentialState==='account-mismatch')status='저장된 토큰의 서버·계정이 현재 설정과 다릅니다.';
   if(process.argv.includes('--connection-check'))console.log(JSON.stringify({credentialState,hasToken:!!token}));
+  record('profile-loaded',{tokenRestored:!!token,registered:startupRegistration.registered,enabled:startupRegistration.enabled,count:screen.getAllDisplays().length});
   client=new RocketClient(store,()=>token);client.on('change',emit);client.on('status',s=>{status=s;emit();});
   const webPreferences={preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:!smoke};
   const placement=store.data.desktopPlacement;displayId=placement.displayId==='primary'?screen.getPrimaryDisplay().id:Number(placement.displayId);({x,y}=restorePosition(area(),store.data.desktopPosition,store.data.settings.size));if(placement.edge!=='free')({x,y}=snapToEdge(area(),{x,y},store.data.settings.size,placement.edge));
   petWindow=new BrowserWindow({...layout(area(),x,store.data.settings.size,y).bounds,frame:false,transparent:true,alwaysOnTop:true,skipTaskbar:true,resizable:false,show:!smoke,webPreferences});
   panelWindow=new BrowserWindow({width:780,height:740,minWidth:650,minHeight:540,title:'Rocket Pet · 메시지 확인 도우미',backgroundColor:'#f6f7f9',show:false,autoHideMenuBar:true,webPreferences});
   configure(petWindow);configure(panelWindow);
+  let rendererRecoveries=0;
+  petWindow.on('close',event=>{if(!app.quitting){event.preventDefault();record('pet-close-prevented');showPet('close');}});
+  for(const [win,type] of [[petWindow,'pet'],[panelWindow,'settings']]){
+    win.webContents.on('render-process-gone',(_event,details)=>{
+      record('renderer-gone',{type,reason:details.reason});
+      if(!app.quitting&&!win.isDestroyed()&&rendererRecoveries++<3)setTimeout(()=>{if(!win.isDestroyed()){record('renderer-reload',{type});win.reload();}},500);
+    });
+    win.webContents.on('did-finish-load',()=>{emit();if(win===petWindow&&!smoke)showPet('loaded');});
+    win.webContents.on('did-fail-load',(_event,code,_description,_url,isMainFrame)=>{if(isMainFrame)record('load-failed',{type,code});});
+  }
   panelWindow.on('close',e=>{if(!app.quitting){e.preventDefault();panel(false);}});
   panelWindow.on('show',()=>{settingsOpen=true;frame();});panelWindow.on('hide',()=>{settingsOpen=false;frame();});
   handler('state',()=>state());handler('interactive',on=>panel(!!on));handler('quit',()=>app.quit());
@@ -98,11 +120,16 @@ app.whenReady().then(async()=>{
   await Promise.all([petWindow.loadFile(path.join(__dirname,'ui.html')),panelWindow.loadFile(path.join(__dirname,'ui.html'),{query:panelQuery})]);
   emit();timer=setInterval(frame,50);for(const event of ['display-added','display-removed','display-metrics-changed'])screen.on(event,refreshDisplays);
   if(smoke){await smokeTest();return;}
+  for(const event of ['resume','unlock-screen'])powerMonitor.on(event,()=>{record('session-resumed',{reason:event});showPet(event);});
+  setInterval(()=>{if(petWindow&&!petWindow.isDestroyed()&&!app.quitting&&(!petWindow.isVisible()||petWindow.isMinimized()))showPet('visibility-check');},5000).unref();
+  record('running',{visible:petWindow.isVisible()});
   if(token)void client.start();
   if(process.argv.includes('--settings')||!token&&!process.argv.includes('--startup'))panel(true);
-}).catch(e=>{console.error(e.message);app.exit(1);});
+}).catch(e=>{record('startup-failed',{errorName:e.name,code:e.code});console.error(e.message);if(!smoke)dialog.showErrorBox('Rocket Snail 시작 오류','앱을 시작하지 못했습니다. 저장된 설정은 유지되어 있습니다. 오류 기록은 %APPDATA%\\DexterRocketPet\\app.log에 남았습니다.');app.exit(1);});
+app.on('child-process-gone',(_event,details)=>record('child-process-gone',{type:details.type,reason:details.reason}));
+app.on('quit',(_event,code)=>record('quit',{code}));
 app.on('before-quit',()=>{app.quitting=true;clearTimeout(smokeTimeout);clearInterval(timer);client?.stop();tray?.destroy();});
-app.on('window-all-closed',()=>app.quit());
+app.on('window-all-closed',()=>{record('all-windows-closed');app.quit();});
 async function smokeTest(){
   console.log('Smoke: existing UI and message behavior');
   fs.mkdirSync(artifacts,{recursive:true});const errors=[];
@@ -266,6 +293,10 @@ async function smokeTest(){
     setPlacement({displayId:'primary',edge:'free'});
   }
   store.data.settings.motionEnabled=originalMotion;frame();checks.placement={displays:availableDisplays(),edges:placementChecks,monitorSwitch};
+  const reloaded=new Promise(resolve=>petWindow.webContents.once('did-finish-load',resolve));
+  petWindow.webContents.forcefullyCrashRenderer();await reloaded;emit();frame();
+  const recovered=await petWindow.webContents.executeJavaScript("new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(!!document.querySelector('#snail-art svg')&&!!window.pet))))");
+  if(!recovered||petWindow.webContents.isCrashed())throw Error('캐릭터 렌더러 복구 실패');checks.rendererRecovery=true;
   fs.writeFileSync(path.join(artifacts,'smoke-result.json'),JSON.stringify({passed:!errors.length,...checks,errors},null,2));
   app.quit();
 }

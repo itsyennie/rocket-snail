@@ -148,6 +148,14 @@ Releases에서 Windows x64 ZIP을 받아 전체를 압축 해제한 뒤 RocketPe
 
 ## 개발 도구에서 실행한 앱이 종료되는 경우
 
-2026-10-28 비교에서 개발 도구의 Start-Process로 실행한 RocketPet 메인 프로세스는 Windows Job Object 안에 있었고, 독립 실행 중인 Tikki는 밖에 있었습니다. WMI로 실행한 RocketPet 메인 프로세스는 Job Object 밖이며, 토큰 복원·표시도 정상인 것을 확인했습니다. 당시 종료 신호 자체는 기록되지 않아 과거 종료 원인을 단정할 수는 없습니다.
+2026-10-28 비교에서 개발 도구의 Start-Process로 실행한 RocketPet 메인 프로세스는 Windows Job Object 안에 있었고, 독립 실행 중인 Tikki는 밖에 있었습니다. WMI로 실행한 RocketPet 메인 프로세스는 Job Object 밖인 것을 확인했습니다. 당시 종료 신호 자체는 기록되지 않아 과거 종료 원인을 단정할 수는 없습니다. 토큰 복원은 처음에 개발 도구 쪽 로그로 판단했으나, 이후 실제 앱에서 빈 계정 화면을 확인하여 아래 저장 공간 문제를 별도로 복구했습니다.
 
 도구의 작업 세션이 끝나도 앱을 유지하려면 scripts/launch-windows.ps1을 사용합니다. 이 스크립트는 Win32_Process.Create로 앱을 독립 실행합니다. 평소에는 Windows 바탕화면 바로가기나 탐색기에서 RocketPet.exe를 직접 실행하면 됩니다. Electron의 GPU·렌더러 하위 프로세스가 별도 Job Object에 속하는 것은 정상이며, 메인 프로세스를 기준으로 비교해야 합니다.
+
+## 개발 도구에서 독립 실행으로 바꾼 뒤 계정이 비어 있는 경우
+
+패키지형 개발 도구에서 실행한 앱은 AppData 접근이 도구의 LocalCache/Roaming으로 리디렉션될 수 있습니다. 도구에서 읽은 로그와 일반 Windows 앱에서 읽은 로그는 같은 경로 문자열이어도 실제 파일이 다를 수 있습니다. 이번 사례는 Codex 패키지의 LocalCache/Roaming/DexterRocketPet에 기존 계정이 있었고, 독립 실행한 앱의 일반 AppData에는 계정 파일이 없었습니다.
+
+앱을 종료한 상태에서 **일반 Windows PowerShell**로 `scripts/restore-profile.ps1 -SourceProfile "기존 프로필 폴더의 절대 경로"`를 실행하면 기존 state.json, credential.bin, Local State를 함께 복원합니다. 개발 도구 안에서 직접 실행하면 다시 리디렉션될 수 있으므로 독립 환경에서 실행해야 합니다. 같은 Windows 사용자 계정에서만 사용하며, 대상에 설정 또는 토큰이 있으면 덮어쓰지 않고 중단합니다. 기존 암호화 키는 백업하고 원본 프로필도 유지합니다. 토큰만 복사하면 암호화 키가 달라 복원되지 않을 수 있습니다. 한글 설정은 UTF-8로 읽습니다.
+
+복원 후 일반 앱의 진단 로그에서 tokenRestored와 자동 실행 등록 여부를 확인합니다. 개발 도구 쪽 과거 로그만으로 복원을 판단하지 않습니다. 실제 PC 재부팅 검증은 별도로 필요합니다.

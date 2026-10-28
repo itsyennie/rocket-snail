@@ -145,3 +145,9 @@ Releases에서 Windows x64 ZIP을 받아 전체를 압축 해제한 뒤 RocketPe
 
 
 스레드 구현 근거: [8.5 스레드 미확인 등록·해제](https://github.com/RocketChat/Rocket.Chat/blob/8.5.0/apps/meteor/app/threads/server/functions.ts), [구독 스키마](https://developer.rocket.chat/apidocs/subscription-schema). 서버의 미확인 목록 해제는 사용자의 읽음 처리 외에 스레드 팔로우 해제로도 발생할 수 있으므로, 자동 정리는 서버가 제공하는 상태를 기준으로 합니다.
+
+## 개발 도구에서 실행한 앱이 종료되는 경우
+
+2026-10-28 비교에서 개발 도구의 Start-Process로 실행한 RocketPet 메인 프로세스는 Windows Job Object 안에 있었고, 독립 실행 중인 Tikki는 밖에 있었습니다. WMI로 실행한 RocketPet 메인 프로세스는 Job Object 밖이며, 토큰 복원·표시도 정상인 것을 확인했습니다. 당시 종료 신호 자체는 기록되지 않아 과거 종료 원인을 단정할 수는 없습니다.
+
+도구의 작업 세션이 끝나도 앱을 유지하려면 scripts/launch-windows.ps1을 사용합니다. 이 스크립트는 Win32_Process.Create로 앱을 독립 실행합니다. 평소에는 Windows 바탕화면 바로가기나 탐색기에서 RocketPet.exe를 직접 실행하면 됩니다. Electron의 GPU·렌더러 하위 프로세스가 별도 Job Object에 속하는 것은 정상이며, 메인 프로세스를 기준으로 비교해야 합니다.

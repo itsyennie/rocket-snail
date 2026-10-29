@@ -100,7 +100,7 @@ function renderCustomization(root){
  const previewNote=el('p','선택한 모습이 여기에서 바로 보여요.');preview.append(previewNote);layout.append(preview);
  const controls=el('div');controls.className='appearance-controls';layout.append(controls);
  function section(name,description){const c=card();c.append(el('h2',name),el('p',description));controls.append(c);return c;}
- const baseCard=section('기본 캐릭터','B 모찌와 D 고스 중 기본 체형을 고르세요. 색상과 무늬는 그대로 유지됩니다.');
+ const baseCard=section('기본 캐릭터','통통하고 둥근 말랑이 · 날씬하고 각진 시크. 체형을 바꿔도 색상과 무늬는 유지됩니다.');
  const baseChoices=el('div');baseChoices.className='appearance-choices';baseCard.append(baseChoices);const baseButtons=[];
  for(const [value,name] of SnailAppearance.bases){const b=button('',()=>{draft.base=value;refresh();});b.className='appearance-choice';b.dataset.base=value;baseButtons.push({b,value,name});baseChoices.append(b);}
  baseCard.append(button('선택한 캐릭터의 추천 색·표정으로',()=>{draft={...SnailAppearance.presets[draft.base]};refresh();}));

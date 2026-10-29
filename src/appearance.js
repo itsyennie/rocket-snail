@@ -20,13 +20,13 @@
       plain:''
     };
     let eyeMarkup='';
-    for(const [x,y] of [[72,22],[87,18]]){
+    for(const [x,y] of [[72,38],[87,34]]){
       if(a.eyeStyle==='happy')eyeMarkup+=`<path d="M${x-4} ${y+1} Q${x} ${y-5} ${x+4} ${y+1}" fill="none" stroke="#225e68" stroke-width="2.5" stroke-linecap="round"/>`;
       else if(a.eyeStyle==='sleepy')eyeMarkup+=`<path d="M${x-4} ${y} Q${x} ${y+4} ${x+4} ${y}" fill="none" stroke="#225e68" stroke-width="2.5" stroke-linecap="round"/>`;
       else if(a.eyeStyle==='sparkle')eyeMarkup+=`<g fill="#225e68">${star(x+1,y,4)}</g>`;
       else eyeMarkup+=`<circle cx="${x+2}" cy="${y}" r="2.4" fill="#225e68"/>`;
     }
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 10 85 79" role="img" aria-label="꾸민 달팽이" data-shell-pattern="${a.shellPattern}" data-eye-style="${a.eyeStyle}"><defs><clipPath id="${clip}"><path d="${shellPath}"/></clipPath></defs><path class="snail-body" d="M16 78 Q26 64 53 66 Q78 67 85 80 L85 88 L18 88Z" fill="${a.bodyColor}" stroke="#225e68" stroke-width="3"/><g class="shell"><path d="${shellPath}" fill="${a.shellColor}" stroke="#874c56" stroke-width="4"/><g clip-path="url(#${clip})" fill="${a.patternColor}" color="${a.patternColor}">${designs[a.shellPattern]}</g></g><path d="M72 69 L72 27 M86 69 L86 23" stroke="#225e68" stroke-width="4" stroke-linecap="round"/><circle cx="72" cy="22" r="7" fill="#fff" stroke="#225e68" stroke-width="3"/><circle cx="87" cy="18" r="7" fill="#fff" stroke="#225e68" stroke-width="3"/>${eyeMarkup}</svg>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 10 85 79" role="img" aria-label="꾸민 달팽이" data-shell-pattern="${a.shellPattern}" data-eye-style="${a.eyeStyle}"><defs><clipPath id="${clip}"><path d="${shellPath}"/></clipPath></defs><path class="snail-body" d="M15 80 Q19 70 35 69 L67 66 Q77 50 87 57 Q95 63 91 77 Q90 88 79 88 L25 88 Q16 88 15 80Z" fill="${a.bodyColor}" stroke="#225e68" stroke-width="3"/><g class="shell"><path d="${shellPath}" fill="${a.shellColor}" stroke="#263b42" stroke-width="3.5"/><g clip-path="url(#${clip})" fill="${a.patternColor}" color="${a.patternColor}">${designs[a.shellPattern]}</g></g><path d="M73 65 Q70 53 72 43 M85 62 Q88 50 87 40" stroke="#225e68" stroke-width="4" stroke-linecap="round"/><circle cx="72" cy="38" r="7.5" fill="#fff" stroke="#225e68" stroke-width="3"/><circle cx="87" cy="34" r="7.5" fill="#fff" stroke="#225e68" stroke-width="3"/>${eyeMarkup}<ellipse cx="87" cy="70" rx="3.5" ry="2" fill="#ec8a9c" opacity=".7"/><path d="M75 72 Q78 76 82 72" fill="none" stroke="#263b42" stroke-width="1.8" stroke-linecap="round"/></svg>`;
   }
   return {defaults,patterns,eyes,normalize,svg};
 });

@@ -201,6 +201,7 @@ async function smokeTest(){
   delete store.data.items['thread-demo'];emit();checks.threadConfirmation={localConfirm:true,restorable:true};
   const previousAppearance=JSON.stringify(store.data.settings.appearance),staleSettings=structuredClone(store.data.settings);
   await panelWindow.webContents.executeJavaScript(`document.querySelector('[data-tab=customize]').click();
+    document.querySelector('.appearance-choice[data-base=goth]').onclick();
     document.querySelector('[data-shell-pattern=stars].appearance-choice').onclick();
     document.querySelector('[data-eye-style=happy].appearance-choice').onclick();
     for(const [name,value] of [['shellColor','#b4a0df'],['patternColor','#76609e'],['bodyColor','#eaa9b7']]){const input=document.querySelector('[name='+name+']');input.value=value;input.dispatchEvent(new Event('input'));}
@@ -212,7 +213,7 @@ async function smokeTest(){
   await panelWindow.webContents.executeJavaScript(`pet.save({settings:${JSON.stringify(staleSettings)}})`);
   const preserved=JSON.stringify(new Store(store.file).data.settings.appearance)===JSON.stringify(customized);
   const desktopAppearance=await petWindow.webContents.executeJavaScript("new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r({pattern:document.querySelector('#snail-art svg').dataset.shellPattern,eyes:document.querySelector('#snail-art svg').dataset.eyeStyle,body:document.querySelector('#snail-art .snail-body').getAttribute('fill'),paused:document.getElementById('character').classList.contains('paused')}))))");
-  if(!previewOnly||!preserved||previewChecks.pattern!=='stars'||previewChecks.eyes!=='happy'||previewChecks.body!=='#eaa9b7'||desktopAppearance.pattern!=='stars'||desktopAppearance.eyes!=='happy'||desktopAppearance.body!=='#eaa9b7'||!desktopAppearance.paused)throw Error('달팽이 꾸미기 미리보기·저장 검증 실패');
+  if(customized.base!=='goth'||!previewOnly||!preserved||previewChecks.pattern!=='stars'||previewChecks.eyes!=='happy'||previewChecks.body!=='#eaa9b7'||desktopAppearance.pattern!=='stars'||desktopAppearance.eyes!=='happy'||desktopAppearance.body!=='#eaa9b7'||!desktopAppearance.paused)throw Error('달팽이 꾸미기 미리보기·저장 검증 실패');
   checks.appearance={previewOnly,preview:previewChecks,desktop:desktopAppearance,persisted:customized,preservedAfterOtherSettingsSave:preserved};
   await panelWindow.webContents.executeJavaScript("document.getElementById('toast').hidden=true;document.querySelector('main').scrollTop=0;new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))");
   fs.writeFileSync(path.join(artifacts,'customize.png'),(await panelWindow.webContents.capturePage()).toPNG());

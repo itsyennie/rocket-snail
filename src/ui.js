@@ -100,6 +100,10 @@ function renderCustomization(root){
  const previewNote=el('p','선택한 모습이 여기에서 바로 보여요.');preview.append(previewNote);layout.append(preview);
  const controls=el('div');controls.className='appearance-controls';layout.append(controls);
  function section(name,description){const c=card();c.append(el('h2',name),el('p',description));controls.append(c);return c;}
+ const baseCard=section('기본 캐릭터','B 모찌와 D 고스 중 기본 체형을 고르세요. 색상과 무늬는 그대로 유지됩니다.');
+ const baseChoices=el('div');baseChoices.className='appearance-choices';baseCard.append(baseChoices);const baseButtons=[];
+ for(const [value,name] of SnailAppearance.bases){const b=button('',()=>{draft.base=value;refresh();});b.className='appearance-choice';b.dataset.base=value;baseButtons.push({b,value,name});baseChoices.append(b);}
+ baseCard.append(button('선택한 캐릭터의 추천 색·표정으로',()=>{draft={...SnailAppearance.presets[draft.base]};refresh();}));
  const shell=section('껍데기','무늬와 색을 조합해 나만의 등을 만들어보세요.');
  const patternChoices=el('div');patternChoices.className='appearance-choices patterns';patternChoices.setAttribute('role','group');patternChoices.setAttribute('aria-label','껍데기 무늬');shell.append(patternChoices);
  const shellPalette=[['살구','#f7aa65'],['라벤더','#b4a0df'],['하늘','#86bddd'],['민트','#8ac9b4'],['레몬','#edd582'],['장미','#e5a3bd']];
@@ -121,9 +125,10 @@ function renderCustomization(root){
  for(const [value,name] of SnailAppearance.eyes){const b=button('',()=>{draft.eyeStyle=value;refresh();});b.className='appearance-choice';b.dataset.eyeStyle=value;b.setAttribute('aria-label',name);eyeButtons.push({b,value,name});eyeChoices.append(b);}
  const bar=el('div');bar.className='appearance-save-bar';const note=el('small');
  const apply=button('적용하고 저장',async()=>{const result=await pet.setAppearance(draft);draft=SnailAppearance.normalize(result.appearance);savedKey=JSON.stringify(draft);refresh();toast('달팽이 모습을 적용하고 저장했습니다.');},true);apply.dataset.applyAppearance='';
- bar.append(note,button('기본 모습으로',()=>{draft={...SnailAppearance.defaults};refresh();}),apply);root.append(bar);
+ bar.append(note,button('기본 모습으로',()=>{draft={...SnailAppearance.presets[draft.base]};refresh();}),apply);root.append(bar);
  function refresh(){
   art.innerHTML=SnailAppearance.svg(draft,'preview');
+  for(const {b,value,name} of baseButtons){const thumbnail=el('span');thumbnail.innerHTML=SnailAppearance.svg({...draft,base:value},'base-'+value);b.replaceChildren(thumbnail,el('small',name));b.setAttribute('aria-pressed',String(draft.base===value));}
   for(const {b,value,name} of patternButtons){b.replaceChildren();const thumbnail=el('span');thumbnail.innerHTML=SnailAppearance.svg({...draft,shellPattern:value},`pattern-${value}`);b.append(thumbnail,el('small',name));b.setAttribute('aria-pressed',String(draft.shellPattern===value));}
   for(const {b,value,name} of eyeButtons){b.replaceChildren();const thumbnail=el('span');thumbnail.innerHTML=SnailAppearance.svg({...draft,eyeStyle:value},`eyes-${value}`);b.append(thumbnail,el('small',name));b.setAttribute('aria-pressed',String(draft.eyeStyle===value));}
   for(const key of Object.keys(colorInputs)){colorInputs[key].value=draft[key];for(const b of colorChips[key])b.setAttribute('aria-pressed',String(b.dataset.color===draft[key]));}

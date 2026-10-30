@@ -1,6 +1,6 @@
 {
   "name": "rocket-message-pet",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "private": true,
   "description": "Local Rocket.Chat message companion for Windows",
   "main": "src/main.cjs",

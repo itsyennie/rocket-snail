@@ -68,6 +68,7 @@ app.whenReady().then(async()=>{
   record('ready');
   for(let attempt=0;!screen.getAllDisplays().some(d=>d.workArea.width>0&&d.workArea.height>0);attempt++){if(attempt>=60)throw Error('Display unavailable');if(attempt===0)record('waiting-for-display');await new Promise(resolve=>setTimeout(resolve,500));}
   store=new Store(path.join(app.getPath('userData'),'state.json'));
+  if(smoke&&!process.argv.includes('--smoke-verify-profile')){store.data.settings.baseUrl='https://chat.example.com';store.data.settings.userId='fictional-user';store.data.items={};store.data.archive=[];}
   if(!smoke){try{startupRegistration=startup.registration(app,process.execPath);if(store.data.settings.startup&&(!startupRegistration.registered||startupRegistration.enabled))startupRegistration=await startup.apply(app,process.execPath,true);}catch{status='Windows 자동 실행 등록을 확인하지 못했습니다.';}}
   if(process.argv.includes('--startup-check'))console.log(JSON.stringify({startupRegistration}));
   let credentialState='missing';
@@ -133,6 +134,15 @@ app.on('quit',(_event,code)=>record('quit',{code}));
 app.on('before-quit',()=>{app.quitting=true;clearTimeout(smokeTimeout);clearInterval(timer);client?.stop();tray?.destroy();});
 app.on('window-all-closed',()=>{record('all-windows-closed');app.quit();});
 async function smokeTest(){
+  if(process.argv.includes('--smoke-verify-profile')){
+    const expected=JSON.parse(fs.readFileSync(path.join(artifacts,'restart-expected.json'),'utf8'));
+    if(JSON.stringify(store.data)!==JSON.stringify(expected))throw Error('Persisted profile differs after restart');
+    if(safeStorage.decryptString(fs.readFileSync(path.join(artifacts,'synthetic-credential.bin')))!=='synthetic-release-token')throw Error('Synthetic credential restore failed');
+    const base=await petWindow.webContents.executeJavaScript("document.querySelector('#snail-art svg').dataset.base");
+    if(base!==expected.settings.appearance.base)throw Error('Restarted renderer has wrong character');
+    fs.writeFileSync(path.join(artifacts,'restart-'+base+'.json'),JSON.stringify({passed:true,base,settingsPreserved:true,syntheticCredentialRestored:true}));
+    console.log('Restart profile verified: '+base);app.quit();return;
+  }
   console.log('Smoke: existing UI and message behavior');
   fs.mkdirSync(artifacts,{recursive:true});const errors=[];
   store.data.desktopPlacement={displayId:'primary',edge:'free'};displayId=screen.getPrimaryDisplay().id;
@@ -302,5 +312,8 @@ async function smokeTest(){
   const recovered=await petWindow.webContents.executeJavaScript("new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(!!document.querySelector('#snail-art svg')&&!!window.pet))))");
   if(!recovered||petWindow.webContents.isCrashed())throw Error('캐릭터 렌더러 복구 실패');checks.rendererRecovery=true;
   fs.writeFileSync(path.join(artifacts,'smoke-result.json'),JSON.stringify({passed:!errors.length,...checks,errors},null,2));
+  store.save();
+  fs.writeFileSync(path.join(artifacts,'restart-expected.json'),JSON.stringify(new Store(store.file).data));
+  fs.writeFileSync(path.join(artifacts,'synthetic-credential.bin'),safeStorage.encryptString('synthetic-release-token'));
   app.quit();
 }

@@ -10,5 +10,6 @@ fs.cpSync(path.join(root,'src'),path.join(app,'src'),{recursive:true});
 const pkg=require('../package.json');fs.writeFileSync(path.join(app,'package.json'),JSON.stringify({name:pkg.name,version:pkg.version,main:pkg.main,author:pkg.author,license:pkg.license,private:true},null,2));
 fs.copyFileSync(path.join(root,'README.md'),path.join(out,'README.md'));
 for(const name of ['LICENSE.md','THIRD_PARTY_NOTICES.md']){fs.copyFileSync(path.join(root,name),path.join(out,name));fs.copyFileSync(path.join(root,name),path.join(app,name));}
-fs.cpSync(path.join(root,'docs','media'),path.join(out,'docs','media'),{recursive:true});
+fs.cpSync(path.join(root,'docs','media','v0.2.7'),path.join(out,'docs','media','v0.2.7'),{recursive:true});
+fs.copyFileSync(path.join(root,'RELEASE_NOTES.md'),path.join(out,'RELEASE_NOTES.md'));
 console.log(out);

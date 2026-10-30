@@ -11,23 +11,25 @@
 - **위치와 움직임:** 모니터 선택, 드래그 이동, 상하좌우 가장자리 이동, 움직임 끄기
 - **편의 설정:** 마우스를 올리거나 설정 창을 열면 정지, Windows 시작 시 실행
 
-## 사용 모습
+## 사용 모습 · v0.2.7 테스트 버전
 
-### 평상시
+말랑이(둥근 체형)와 시크(날씬한 체형)를 선택할 수 있습니다. 색·눈·무늬를 각각 바꿀 수 있고, 기존 외형 설정에 종류가 없으면 기존 색을 유지한 말랑이로 표시됩니다.
 
-![화면 가장자리를 걷는 달팽이](docs/media/snail-walking.gif)
-
-[영상 보기](docs/media/snail-walking.mp4)
+<img src="docs/media/v0.2.7/mochi-512.png" width="140" alt="말랑이 픽셀 캐릭터"> <img src="docs/media/v0.2.7/goth-512.png" width="140" alt="시크 픽셀 캐릭터">
 
 ### 알림 한 개
 
-<img src="docs/media/single-notification.png" width="337" alt="알림 한 개">
+<img src="docs/media/v0.2.7/single-notification.png" width="337" alt="단일 알림 · 기능 설명용 재구성 · 가상 메시지">
 
 ### 알림 여러 개
 
-<img src="docs/media/multiple-notifications.png" width="337" alt="여러 알림이 쌓인 모습">
+<img src="docs/media/v0.2.7/multiple-notifications.png" width="337" alt="여러 알림 · 기능 설명용 재구성 · 가상 메시지">
 
-화면의 방 이름·사용자 이름·메시지는 블러 처리했습니다.
+### 달팽이 꾸미기
+
+<img src="docs/media/v0.2.7/customization.png" width="600" alt="가상 테스트 프로필의 실제 꾸미기 화면">
+
+알림 이미지는 기능 설명용 재구성이며 모든 메시지는 가상 데이터입니다. 꾸미기 이미지는 테스트 프로필의 실제 앱 화면입니다.
 
 ## 설치하기
 

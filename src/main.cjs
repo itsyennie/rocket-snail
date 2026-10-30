@@ -1,6 +1,7 @@
 const {app,BrowserWindow,ipcMain,shell,safeStorage,screen,Tray,Menu,nativeImage,powerMonitor,dialog}=require('electron');
 const fs=require('node:fs');const path=require('node:path');const {pathToFileURL}=require('node:url');
 const {Store}=require('./store.cjs');const {RocketClient}=require('./rocket.cjs');
+const {keepAbove}=require('./visibility.cjs');
 const startup=require('./startup.cjs');let startupRegistration={registered:false,enabled:false};
 const {openDesktopMessage}=require('./desktop-link.cjs');const {validateSettings}=require('./settings.cjs');const {layout,beginDrag,moveDrag,savedPosition,restorePosition}=require('./desktop.cjs');
 const {normalize:normalizeAppearance}=require('./appearance.js');
@@ -26,7 +27,7 @@ function emit(){for(const win of [petWindow,panelWindow])sendWindow(win,'state',
 function configure(win){win.webContents.setWindowOpenHandler(()=>({action:'deny'}));win.webContents.on('will-navigate',e=>e.preventDefault());}
 function showPet(reason='requested'){
  if(!petWindow||petWindow.isDestroyed()||app.quitting)return;
- try{if(petWindow.isMinimized())petWindow.restore();petWindow.setAlwaysOnTop(true);petWindow.showInactive();refreshDisplays();record('pet-shown',{reason,visible:petWindow.isVisible()});}catch(e){record('visibility-failed',{reason,errorName:e.name,code:e.code});}
+ try{if(petWindow.isMinimized())petWindow.restore();petWindow.setAlwaysOnTop(true);petWindow.showInactive();keepAbove(petWindow,app.quitting);refreshDisplays();record('pet-shown',{reason,visible:petWindow.isVisible()});}catch(e){record('visibility-failed',{reason,errorName:e.name,code:e.code});}
 }
 function panel(show=true){settingsOpen=!!show;if(show){emit();if(smoke){smokePanelOpens++;frame();return;}panelWindow.show();panelWindow.focus();}else panelWindow.hide();frame();}
 function display(){return chooseDisplay(screen.getAllDisplays().filter(d=>d.workArea.width>0&&d.workArea.height>0),screen.getPrimaryDisplay().id,displayId)||screen.getPrimaryDisplay();}
@@ -82,6 +83,7 @@ app.whenReady().then(async()=>{
   panelWindow=new BrowserWindow({width:780,height:740,minWidth:650,minHeight:540,title:'Rocket Pet · 메시지 확인 도우미',backgroundColor:'#f6f7f9',show:false,autoHideMenuBar:true,webPreferences});
   configure(petWindow);configure(panelWindow);
   let rendererRecoveries=0;
+  petWindow.on('blur',()=>{if(!smoke)setTimeout(()=>{try{keepAbove(petWindow,app.quitting);}catch(e){record('visibility-failed',{reason:'blur',errorName:e.name});}},100);});
   petWindow.on('close',event=>{if(!app.quitting){event.preventDefault();record('pet-close-prevented');showPet('close');}});
   for(const [win,type] of [[petWindow,'pet'],[panelWindow,'settings']]){
     win.webContents.on('render-process-gone',(_event,details)=>{
@@ -121,7 +123,7 @@ app.whenReady().then(async()=>{
   emit();timer=setInterval(frame,50);for(const event of ['display-added','display-removed','display-metrics-changed'])screen.on(event,refreshDisplays);
   if(smoke){await smokeTest();return;}
   for(const event of ['resume','unlock-screen'])powerMonitor.on(event,()=>{record('session-resumed',{reason:event});showPet(event);});
-  setInterval(()=>{if(petWindow&&!petWindow.isDestroyed()&&!app.quitting&&(!petWindow.isVisible()||petWindow.isMinimized()))showPet('visibility-check');},5000).unref();
+  setInterval(()=>{try{keepAbove(petWindow,app.quitting);}catch(e){record('visibility-failed',{reason:'z-order-check',errorName:e.name,code:e.code});}},1500).unref();
   record('running',{visible:petWindow.isVisible()});
   if(token)void client.start();
   if(process.argv.includes('--settings')||!token&&!process.argv.includes('--startup'))panel(true);
@@ -214,6 +216,7 @@ async function smokeTest(){
   const preserved=JSON.stringify(new Store(store.file).data.settings.appearance)===JSON.stringify(customized);
   const desktopAppearance=await petWindow.webContents.executeJavaScript("new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r({pattern:document.querySelector('#snail-art svg').dataset.shellPattern,eyes:document.querySelector('#snail-art svg').dataset.eyeStyle,body:document.querySelector('#snail-art .snail-body').getAttribute('fill'),paused:document.getElementById('character').classList.contains('paused')}))))");
   if(customized.base!=='goth'||!previewOnly||!preserved||previewChecks.pattern!=='stars'||previewChecks.eyes!=='happy'||previewChecks.body!=='#eaa9b7'||desktopAppearance.pattern!=='stars'||desktopAppearance.eyes!=='happy'||desktopAppearance.body!=='#eaa9b7'||!desktopAppearance.paused)throw Error('달팽이 꾸미기 미리보기·저장 검증 실패');
+  petWindow.setAlwaysOnTop(false);const beforeAbove=petWindow.getBounds();keepAbove(petWindow);if(!petWindow.isAlwaysOnTop()||JSON.stringify(beforeAbove)!==JSON.stringify(petWindow.getBounds()))throw Error('Topmost recovery failed');checks.topmostRecovery=true;
   checks.appearance={previewOnly,preview:previewChecks,desktop:desktopAppearance,persisted:customized,preservedAfterOtherSettingsSave:preserved};
   await panelWindow.webContents.executeJavaScript("document.getElementById('toast').hidden=true;document.querySelector('main').scrollTop=0;new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))");
   fs.writeFileSync(path.join(artifacts,'customize.png'),(await panelWindow.webContents.capturePage()).toPNG());

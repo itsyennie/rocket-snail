@@ -1,0 +1,5 @@
+const test=require('node:test'),assert=require('node:assert/strict');
+const {keepAbove}=require('../src/visibility.cjs');
+function fake({visible=true,top=true,minimized=false,destroyed=false}={}){const calls=[];return {calls,isDestroyed:()=>destroyed,isVisible:()=>visible,isAlwaysOnTop:()=>top,isMinimized:()=>minimized,restore:()=>calls.push('restore'),setAlwaysOnTop:x=>calls.push(['top',x]),showInactive:()=>calls.push('showInactive'),moveTop:()=>calls.push('moveTop'),focus:()=>{throw Error('Must not steal focus');},setBounds:()=>{throw Error('Must not move pet');}};}
+test('covered visible topmost pet is raised without focus or position changes',()=>{const w=fake();assert.equal(keepAbove(w),true);assert.deepEqual(w.calls,['moveTop']);});
+test('lost topmost state and hidden window recover; shutdown is respected',()=>{const w=fake({visible:false,top:false,minimized:true});keepAbove(w);assert.deepEqual(w.calls,['restore',['top',true],'showInactive','moveTop']);assert.equal(keepAbove(w,true),false);assert.equal(keepAbove(fake({destroyed:true})),false);});

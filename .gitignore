@@ -8,3 +8,9 @@ test/tmp-*/
 *.log
 credential.bin
 state.json
+Local State
+# Retired real-message media: never reintroduce into public history.
+docs/media/single-notification.png
+docs/media/multiple-notifications.png
+docs/media/snail-walking.gif
+docs/media/snail-walking.mp4

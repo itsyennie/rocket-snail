@@ -9,7 +9,8 @@
     "test": "node --test test/*.test.cjs",
     "smoke": "electron . --smoke-test",
     "package": "node scripts/package.cjs",
-    "release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release.ps1"
+    "release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release.ps1",
+    "check:public": "node scripts/check-public-files.cjs"
   },
   "devDependencies": {
     "electron": "38.8.6"

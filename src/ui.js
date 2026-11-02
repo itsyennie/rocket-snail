@@ -54,6 +54,7 @@ function renderPanel(){if(!panelMode||!state)return;document.querySelectorAll('n
   const startupNote=el('p',state.startupRegistration?.enabled?'Windows 로그인 시 자동 실행이 등록되어 있습니다.':'체크하면 즉시 저장하고 Windows 자동 실행에 등록합니다.');c.append(startupNote);
   startup.onchange=async()=>{startup.disabled=true;const result=await action(()=>pet.setStartup(startup.checked));startup.checked=state.settings.startup;startup.disabled=false;startupNote.textContent=result?(result.enabled?'Windows 로그인 시 자동 실행이 등록되어 있습니다.':'Windows 자동 실행을 해제했습니다.'):'자동 실행 등록을 확인하지 못했습니다. 다시 시도해 주세요.';};
   const actions=el('div');actions.className='actions';actions.append(button('저장하고 연결',async()=>{await pet.save({settings:{...s,baseUrl:url.value,userId:user.value,size:Number(size.value),startup:state.settings.startup,motionEnabled:state.settings.motionEnabled!==false},newToken:token.value});token.value='';toast('설정을 저장했습니다. 계정이 입력되어 있으면 연결을 시작합니다.');},true),button('서버 접근 확인',async()=>{const r=await pet.probe();toast(`Rocket.Chat ${r.version} · 공개 서버 정보 접근 성공`)}));c.append(actions);
+  const recovery=card();recovery.append(el('h2','자동 복구와 진단'),el('p','앱이 오류로 종료되면 자동으로 다시 실행합니다. 반복 오류는 잠시 대기한 뒤 재시도합니다. 직접 종료하면 다시 켜지지 않습니다.'),button('진단 기록 열기',async()=>{await pet.diagnostics();toast('오류와 복구 기록을 열었습니다.');}));root.append(recovery);
   const note=el('p','말풍선이나 메시지의 열기 버튼을 누르면 설치된 Rocket.Chat 데스크톱 앱에서 원본 메시지가 열립니다. 자동 정리는 서버의 읽음 정보를 받은 뒤에 이루어집니다.');note.className='note';root.append(note);
   root.append(button('달팽이 꾸미기',()=>document.querySelector('[data-tab=customize]').click()));
  } else if(tab==='rules'){

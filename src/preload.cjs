@@ -7,5 +7,6 @@ contextBridge.exposeInMainWorld('pet',{
   hover:hovered=>ipcRenderer.invoke('hover',hovered),
   setPlacement:placement=>ipcRenderer.invoke('set-placement',placement),
   setStartup:enabled=>ipcRenderer.invoke('set-startup',enabled),
+  diagnostics:()=>ipcRenderer.invoke('diagnostics'),
   onState:f=>ipcRenderer.on('state',(_e,v)=>f(v)),onGeometry:f=>ipcRenderer.on('geometry',(_e,v)=>f(v))
 });

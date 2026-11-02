@@ -15,14 +15,23 @@ app.setName('Rocket Pet');
 if(process.platform==='win32')app.setAppUserModelId('itsyennie.RocketSnail');
 if(smoke)app.setPath('userData',path.join(artifacts,recoverySmoke?'recovery-profile':'smoke-profile'));
 else app.setPath('userData',path.join(app.getPath('appData'),'DexterRocketPet'));
-if(!smoke&&!app.requestSingleInstanceLock())app.exit(0);
+if(!smoke&&!app.requestSingleInstanceLock()){app.exit(0);return;}
 app.on('second-instance',(_event,args)=>{showPet('second-instance');if(panelWindow&&!args.includes('--startup'))panel(true);});
 app.on('activate',()=>showPet('activate'));
-const record=require('./diagnostics.cjs').createDiagnostics(path.join(app.getPath('userData'),'app.log'));
-record('starting',{startup:process.argv.includes('--startup'),version:app.getVersion()});
-process.on('uncaughtExceptionMonitor',e=>record('uncaught-error',{errorName:e.name,code:e.code}));
+const {createDiagnostics,errorDetails,diagnosticReport}=require('./diagnostics.cjs');
+const record=createDiagnostics(path.join(app.getPath('userData'),'app.log'));
+let phase='starting',fatal=false;
+record('starting',{startup:process.argv.includes('--startup'),version:app.getVersion(),pid:process.pid});
+function fatalExit(event,error){if(fatal)return;fatal=true;record(event,{...errorDetails(error),phase,pid:process.pid,uptimeSeconds:Math.round(process.uptime())});process.exit(1);}
+process.on('uncaughtException',e=>fatalExit('uncaught-error',e));
+process.on('unhandledRejection',e=>fatalExit('unhandled-rejection',e));
+process.on('exit',code=>record('process-exit',{exitCode:code,pid:process.pid,phase,uptimeSeconds:Math.round(process.uptime())}));
+function armRecovery(){stopRecovery();try{stopRecovery=startRecovery({executable:process.execPath,profile:app.getPath('userData'),appPath:app.getAppPath(),packaged:app.isPackaged,record});}catch(e){record('recovery-unavailable',errorDetails(e));}}
+if(!smoke)armRecovery();
 let petWindow,panelWindow,tray,store,client,token='',status='계정 연결을 기다리고 있어요',x,y=null,displayId,drag=null,petHovered=false,direction=1,timer,smokeDesktopLink,smokePanelOpens=0,mouseIgnored,settingsOpen=false;
 function credentials(){return path.join(app.getPath('userData'),'credential.bin');}
+function requestQuit(){record('quit-requested',{reason:'user'});app.quit();}
+async function openDiagnostics(){const file=path.join(app.getPath('userData'),'diagnostics.txt');fs.writeFileSync(file,diagnosticReport(app.getPath('userData'),app.getVersion()),{mode:0o600});if(!smoke){const error=await shell.openPath(file);if(error)throw Error('진단 기록을 열지 못했습니다.');}return {opened:true};}
 function availableDisplays(){const primary=screen.getPrimaryDisplay().id;return screen.getAllDisplays().map((d,i)=>({id:String(d.id),label:d.label||`모니터 ${i+1}`,number:i+1,primary:d.id===primary,width:Math.round(d.size.width*d.scaleFactor),height:Math.round(d.size.height*d.scaleFactor)}));}
 function state(){return {...store.data,startupRegistration,rooms:Object.values(client?.rooms||{}),displays:availableDisplays(),activeDisplayId:String(display().id),status,hasToken:!!token};}
 function sendWindow(win,channel,value){if(!win||win.isDestroyed()||win.webContents.isDestroyed()||win.webContents.isCrashed()||win.webContents.isLoadingMainFrame())return;try{win.webContents.send(channel,value);}catch(e){record('window-send-failed',{errorName:e.name,code:e.code});}}
@@ -66,9 +75,9 @@ function renderFrame(cursor){
 function icon(){const n=24,b=Buffer.alloc(n*n*4);for(let y=0;y<n;y++)for(let x=0;x<n;x++){const shell=(x-11)**2+(y-10)**2<65,foot=y>17&&x>2&&x<22;if(shell||foot){const i=(y*n+x)*4;b[i]=shell?100:160;b[i+1]=shell?164:180;b[i+2]=shell?240:70;b[i+3]=255;}}return nativeImage.createFromBitmap(b,{width:n,height:n});}
 function handler(name,fn){ipcMain.handle(name,(event,...args)=>{if(![petWindow,panelWindow].some(w=>w?.webContents===event.sender))throw Error('허용되지 않은 화면');return fn(...args);});}
 function setMotion(enabled){if(typeof enabled!=='boolean')throw Error('움직임 설정을 확인하세요.');store.data.settings.motionEnabled=enabled;store.save();updateTrayMenu();emit();frame();return {motionEnabled:enabled};}
-function updateTrayMenu(){if(!tray)return;tray.setContextMenu(Menu.buildFromTemplate([{label:'달팽이 다시 표시',click:()=>showPet('tray')},{label:'메시지와 설정',click:()=>panel(true)},{label:'캐릭터 움직이기',type:'checkbox',checked:store.data.settings.motionEnabled!==false,click:item=>{try{setMotion(item.checked)}catch{status='움직임 설정을 저장하지 못했습니다.';emit();}}},{type:'separator'},{label:'종료',click:()=>app.quit()}]));}
+function updateTrayMenu(){if(!tray)return;tray.setContextMenu(Menu.buildFromTemplate([{label:'달팽이 다시 표시',click:()=>showPet('tray')},{label:'메시지와 설정',click:()=>panel(true)},{label:'진단 기록 열기',click:()=>{void openDiagnostics().catch(()=>{status='진단 기록을 열지 못했습니다.';emit();});}},{label:'캐릭터 움직이기',type:'checkbox',checked:store.data.settings.motionEnabled!==false,click:item=>{try{setMotion(item.checked)}catch{status='움직임 설정을 저장하지 못했습니다.';emit();}}},{type:'separator'},{label:'종료',click:requestQuit}]));}
 app.whenReady().then(async()=>{
-  record('ready');
+  phase='loading-profile';record('ready');
   for(let attempt=0;!screen.getAllDisplays().some(d=>d.workArea.width>0&&d.workArea.height>0);attempt++){if(attempt>=60)throw Error('Display unavailable');if(attempt===0)record('waiting-for-display');await new Promise(resolve=>setTimeout(resolve,500));}
   store=new Store(path.join(app.getPath('userData'),'state.json'));
   if(smoke&&!process.argv.includes('--smoke-verify-profile')){store.data.settings.baseUrl='https://chat.example.com';store.data.settings.userId='fictional-user';store.data.items={};store.data.archive=[];}
@@ -88,20 +97,23 @@ app.whenReady().then(async()=>{
   // Windows logoff/shutdown must not be mistaken for a crash by the guardian.
   for(const win of [petWindow,panelWindow])for(const event of ['query-session-end','session-end'])win.on(event,()=>{stopRecovery();record('session-ending');});
   configure(petWindow);configure(panelWindow);
-  let rendererRecoveries=0;
+  const rendererRecoveries=new Map();
   petWindow.on('blur',()=>{if(!smoke)setTimeout(()=>{try{keepAbove(petWindow,app.quitting);}catch(e){record('visibility-failed',{reason:'blur',errorName:e.name});}},100);});
   petWindow.on('close',event=>{if(!app.quitting){event.preventDefault();record('pet-close-prevented');showPet('close');}});
   for(const [win,type] of [[petWindow,'pet'],[panelWindow,'settings']]){
     win.webContents.on('render-process-gone',(_event,details)=>{
-      record('renderer-gone',{type,reason:details.reason});
-      if(!app.quitting&&!win.isDestroyed()&&rendererRecoveries++<3)setTimeout(()=>{if(!win.isDestroyed()){record('renderer-reload',{type});win.reload();}},500);
+      record('renderer-gone',{type,reason:details.reason,exitCode:details.exitCode});
+      const recent=(rendererRecoveries.get(type)||[]).filter(t=>Date.now()-t<600000);recent.push(Date.now());rendererRecoveries.set(type,recent);
+      const delayMs=recent.length>3?30000:500;
+      if(!app.quitting&&!win.isDestroyed()){record('renderer-recovery-scheduled',{type,delayMs});setTimeout(()=>{if(!app.quitting&&!win.isDestroyed()){record('renderer-reload',{type});win.reload();}},delayMs);}
     });
     win.webContents.on('did-finish-load',()=>{emit();if(win===petWindow&&!smoke)showPet('loaded');});
     win.webContents.on('did-fail-load',(_event,code,_description,_url,isMainFrame)=>{if(isMainFrame)record('load-failed',{type,code});});
+    win.on('unresponsive',()=>record('window-unresponsive',{type}));win.on('responsive',()=>record('window-responsive',{type}));
   }
   panelWindow.on('close',e=>{if(!app.quitting){e.preventDefault();panel(false);}});
   panelWindow.on('show',()=>{settingsOpen=true;frame();});panelWindow.on('hide',()=>{settingsOpen=false;frame();});
-  handler('state',()=>state());handler('interactive',on=>panel(!!on));handler('quit',()=>app.quit());
+  handler('state',()=>state());handler('interactive',on=>panel(!!on));handler('quit',requestQuit);handler('diagnostics',openDiagnostics);
   handler('set-motion',setMotion);
   handler('set-startup',async enabled=>{if(typeof enabled!=='boolean')throw Error('자동 실행 설정을 확인하세요.');startupRegistration=smoke?{registered:enabled,enabled}:await startup.apply(app,process.execPath,enabled);store.data.settings.startup=enabled;store.save();emit();return startupRegistration;});
   handler('set-placement',setPlacement);
@@ -128,25 +140,29 @@ app.whenReady().then(async()=>{
   await Promise.all([petWindow.loadFile(path.join(__dirname,'ui.html')),panelWindow.loadFile(path.join(__dirname,'ui.html'),{query:panelQuery})]);
   emit();timer=setInterval(frame,50);for(const event of ['display-added','display-removed','display-metrics-changed'])screen.on(event,refreshDisplays);
   if(recoverySmoke){
-    stopRecovery=startRecovery({executable:process.execPath,profile:app.getPath('userData'),appPath:app.getAppPath(),packaged:app.isPackaged,record,extraArgs:['--smoke-recovery']});
+    stopRecovery=startRecovery({executable:process.execPath,profile:app.getPath('userData'),appPath:app.getAppPath(),packaged:app.isPackaged,record,extraArgs:['--smoke-recovery',...(process.argv.includes('--smoke-fatal')?['--smoke-fatal']:[])]});
+    if(process.argv.includes('--smoke-guardian')){
+      const oldPid=stopRecovery.workerPid();process.kill(oldPid,'SIGKILL');
+      setTimeout(()=>{const newPid=stopRecovery.workerPid();if(!newPid||newPid===oldPid)throw Error('Guardian replacement failed');process.kill(newPid,0);fs.writeFileSync(path.join(artifacts,'guardian-result.json'),JSON.stringify({passed:true,replaced:true}));app.quit();},8000);
+      return;
+    }
     if(process.argv.some(a=>a.startsWith('--recovery-history='))){
       const pixelCharacter=await petWindow.webContents.executeJavaScript("new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(!!document.querySelector('#snail-art svg')))))");
       if(!pixelCharacter)throw Error('Recovered character missing');
-      fs.writeFileSync(path.join(artifacts,'recovery-result.json'),JSON.stringify({passed:true,version:app.getVersion(),restarted:true,pixelCharacter}));
+      fs.writeFileSync(path.join(artifacts,'recovery-result.json'),JSON.stringify({passed:true,version:app.getVersion(),restarted:true,pixelCharacter,fatalMode:process.argv.includes('--smoke-fatal')}));
       app.quit();
-    }else setTimeout(()=>process.kill(process.pid,'SIGKILL'),1500);
+    }else setTimeout(()=>{if(process.argv.includes('--smoke-fatal'))throw Error('Synthetic recovery error');process.kill(process.pid,'SIGKILL');},1500);
     return;
   }
   if(smoke){await smokeTest();return;}
-  for(const event of ['resume','unlock-screen'])powerMonitor.on(event,()=>{record('session-resumed',{reason:event});showPet(event);});
+  for(const event of ['resume','unlock-screen'])powerMonitor.on(event,()=>{record('session-resumed',{reason:event});armRecovery();showPet(event);});
   setInterval(()=>{try{keepAbove(petWindow,app.quitting);}catch(e){record('visibility-failed',{reason:'z-order-check',errorName:e.name,code:e.code});}},1500).unref();
-  record('running',{visible:petWindow.isVisible()});
-  try{stopRecovery=startRecovery({executable:process.execPath,profile:app.getPath('userData'),appPath:app.getAppPath(),packaged:app.isPackaged,record});}catch(e){record('recovery-unavailable',{errorName:e.name,code:e.code});}
-  healthTimer=setInterval(()=>record('health',{visible:!petWindow.isDestroyed()&&petWindow.isVisible()}),60000);healthTimer.unref();
+  phase='running';record('running',{visible:petWindow.isVisible(),pid:process.pid});
+  healthTimer=setInterval(()=>record('health',{visible:!petWindow.isDestroyed()&&petWindow.isVisible(),pid:process.pid,uptimeSeconds:Math.round(process.uptime())}),60000);healthTimer.unref();
   if(token)void client.start();
   if(process.argv.includes('--settings')||!token&&!process.argv.includes('--startup'))panel(true);
-}).catch(e=>{record('startup-failed',{errorName:e.name,code:e.code});console.error(e.message);if(!smoke)dialog.showErrorBox('Rocket Snail 시작 오류','앱을 시작하지 못했습니다. 저장된 설정은 유지되어 있습니다. 오류 기록은 %APPDATA%\\DexterRocketPet\\app.log에 남았습니다.');app.exit(1);});
-app.on('child-process-gone',(_event,details)=>record('child-process-gone',{type:details.type,reason:details.reason}));
+}).catch(e=>fatalExit('startup-failed',e));
+app.on('child-process-gone',(_event,details)=>record('child-process-gone',{type:details.type,reason:details.reason,exitCode:details.exitCode}));
 app.on('quit',(_event,code)=>record('quit',{code}));
 app.on('before-quit',()=>{stopRecovery();app.quitting=true;clearInterval(healthTimer);clearTimeout(smokeTimeout);clearInterval(timer);client?.stop();tray?.destroy();});
 app.on('window-all-closed',()=>{record('all-windows-closed');app.quit();});
@@ -167,6 +183,10 @@ async function smokeTest(){
   await panelWindow.webContents.executeJavaScript("document.querySelector('[data-tab=connection]').click()");
   const checks=await panelWindow.webContents.executeJavaScript("({bridge:!!window.pet,server:document.querySelector('[name=baseUrl]').value,passwordType:document.querySelector('[name=token]').type,heading:document.querySelector('h1').textContent,size:document.querySelector('input[type=range]').value})");
   if(!checks.bridge||checks.server!==store.data.settings.baseUrl||checks.passwordType!=='password')throw Error('UI 검증 실패');
+  const diagnosticOpened=await panelWindow.webContents.executeJavaScript("window.pet.diagnostics().then(r=>r.opened)");
+  const report=fs.readFileSync(path.join(app.getPath('userData'),'diagnostics.txt'),'utf8');
+  if(!diagnosticOpened||!report.includes('진단 기록')||report.includes('fictional-user')||report.includes('chat.example.com'))throw Error('Diagnostic report verification failed');
+  checks.diagnostics=true;
   if(Number(checks.size)!==store.data.settings.size)throw Error('크기 슬라이더 검증 실패');
   fs.writeFileSync(path.join(artifacts,'connection.png'),(await panelWindow.webContents.capturePage()).toPNG());
   clearInterval(timer);

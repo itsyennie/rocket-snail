@@ -4,7 +4,9 @@ const retired=['docs/media/single-notification.png','docs/media/multiple-notific
 const files=git('ls-files','-z').split('\0').filter(Boolean);
 const unsafe=files.filter(p=>/(^|\/)(\.env(?:\..*)?|credential\.bin|state\.json|Local State|id_rsa|id_ed25519)$|\.(pfx|p12|pem)$/i.test(p)||retired.includes(p));
 if(unsafe.length){console.error('Blocked: private profile or retired media is tracked.');process.exit(1);}
-if(git('rev-list','--objects','--branches','--tags','--',...retired).trim()){
+// --objects also prints annotated tag objects even when no path matches.
+// Commit history alone correctly detects files added and later deleted.
+if(git('rev-list','--branches','--tags','--',...retired).trim()){
  console.error('Blocked: a branch or tag contains retired media history. Do not merge an old clone.');process.exit(1);
 }
 console.log('Public file/history guard passed. Image contents still require visual review.');

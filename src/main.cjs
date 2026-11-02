@@ -197,7 +197,9 @@ async function smokeTest(){
   if(!diagnosticOpened||!report.includes('진단 기록')||report.includes('fictional-user')||report.includes('chat.example.com'))throw Error('Diagnostic report verification failed');
   checks.diagnostics=true;
   const pendingBefore=JSON.stringify(store.data.items);
-  const updateUI=await panelWindow.webContents.executeJavaScript("window.pet.checkUpdates().then(()=>new Promise(r=>requestAnimationFrame(()=>r({visible:!document.querySelector('#update-banner').hidden,text:document.querySelector('#update-text').textContent}))))");
+  // IPC state events and invoke replies can arrive on different renderer turns.
+  // Wait for the visible result instead of assuming one animation frame is enough.
+  const updateUI=await panelWindow.webContents.executeJavaScript("window.pet.checkUpdates().then(()=>new Promise(resolve=>{const deadline=Date.now()+3000;function inspect(){const result={visible:!document.querySelector('#update-banner').hidden,text:document.querySelector('#update-text').textContent};if(result.visible&&result.text.includes('v99.0.0')||Date.now()>=deadline)resolve(result);else setTimeout(inspect,25);}inspect();}))");
   if(!updateUI.visible||!updateUI.text.includes('v99.0.0'))throw Error('Update banner missing');
   await panelWindow.webContents.executeJavaScript("window.pet.openUpdate('download')");
   if(smokeUpdateLink!==REPO+'/releases/download/v99.0.0/rocket-snail-99.0.0-windows-x64.zip')throw Error('Update download link invalid');

@@ -4,11 +4,13 @@
 
 - 릴리스: https://github.com/itsyennie/rocket-snail/releases/tag/v0.2.10
 - ZIP: https://github.com/itsyennie/rocket-snail/releases/download/v0.2.10/rocket-snail-0.2.10-windows-x64.zip
-- SHA-256: `c72c482a8de1229f76ccc75e34f24250fbaa087c756c67ae28a0dd9732c4f6b8`
+- SHA-256: `517b9ffd3892291275415cebfce93365a0084d3d4fc08cc58007f29610a5f76f`
 
 ## 최종 ZIP 실행 검증
 
 ZIP 전체를 새 폴더에 풀고 그 안의 RocketPet.exe를 실행했습니다. 실제 계정 대신 격리된 가상 프로필을 사용했습니다.
+
+첫 후보의 자동 검사에서 화면 반영 전 배너를 판정하는 시점 문제가 발견되어, 최대 3초 동안 실제 표시 결과를 기다리도록 검사 코드를 보완하고 다시 패키징했습니다. 아래 결과와 해시는 보완한 최종 후보 기준입니다.
 
 | 항목 | 결과 |
 | --- | --- |

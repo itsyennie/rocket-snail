@@ -1,4 +1,6 @@
-const {app,BrowserWindow,ipcMain,shell,safeStorage,screen,Tray,Menu,nativeImage,powerMonitor,dialog}=require('electron');
+const {app,BrowserWindow,ipcMain,shell,safeStorage,screen,Tray,Menu,nativeImage,powerMonitor,Notification}=require('electron');
+const {UpdateChecker,REPO}=require('./updates.cjs');
+let updater,updateNotice,smokeUpdateLink;
 const fs=require('node:fs');const path=require('node:path');const {pathToFileURL}=require('node:url');
 const {Store}=require('./store.cjs');const {RocketClient}=require('./rocket.cjs');
 const {keepAbove}=require('./visibility.cjs');
@@ -33,7 +35,8 @@ function credentials(){return path.join(app.getPath('userData'),'credential.bin'
 function requestQuit(){record('quit-requested',{reason:'user'});app.quit();}
 async function openDiagnostics(){const file=path.join(app.getPath('userData'),'diagnostics.txt');fs.writeFileSync(file,diagnosticReport(app.getPath('userData'),app.getVersion()),{mode:0o600});if(!smoke){const error=await shell.openPath(file);if(error)throw Error('진단 기록을 열지 못했습니다.');}return {opened:true};}
 function availableDisplays(){const primary=screen.getPrimaryDisplay().id;return screen.getAllDisplays().map((d,i)=>({id:String(d.id),label:d.label||`모니터 ${i+1}`,number:i+1,primary:d.id===primary,width:Math.round(d.size.width*d.scaleFactor),height:Math.round(d.size.height*d.scaleFactor)}));}
-function state(){return {...store.data,startupRegistration,rooms:Object.values(client?.rooms||{}),displays:availableDisplays(),activeDisplayId:String(display().id),status,hasToken:!!token};}
+function state(){return {...store.data,startupRegistration,rooms:Object.values(client?.rooms||{}),displays:availableDisplays(),activeDisplayId:String(display().id),status,hasToken:!!token,updates:updater?.view()||{current:app.getVersion()}};}
+function notifyUpdate(release){if(smoke||!Notification.isSupported())return false;updateNotice=new Notification({title:'Rocket Snail 업데이트',body:`${release.tag}${release.prerelease?' 테스트 버전':''}이 나왔어요. 클릭해서 확인하세요.`});updateNotice.on('click',()=>{if(!app.quitting&&panelWindow&&!panelWindow.isDestroyed())panel(true);});updateNotice.on('failed',()=>record('update-notification-failed'));updateNotice.show();return true;}
 function sendWindow(win,channel,value){if(!win||win.isDestroyed()||win.webContents.isDestroyed()||win.webContents.isCrashed()||win.webContents.isLoadingMainFrame())return;try{win.webContents.send(channel,value);}catch(e){record('window-send-failed',{errorName:e.name,code:e.code});}}
 function emit(){for(const win of [petWindow,panelWindow])sendWindow(win,'state',state());}
 function configure(win){win.webContents.setWindowOpenHandler(()=>({action:'deny'}));win.webContents.on('will-navigate',e=>e.preventDefault());}
@@ -90,6 +93,9 @@ app.whenReady().then(async()=>{
   if(process.argv.includes('--connection-check'))console.log(JSON.stringify({credentialState,hasToken:!!token}));
   record('profile-loaded',{tokenRestored:!!token,registered:startupRegistration.registered,enabled:startupRegistration.enabled,count:screen.getAllDisplays().length});
   client=new RocketClient(store,()=>token);client.on('change',emit);client.on('status',s=>{status=s;emit();});
+  const updateOptions={current:app.getVersion(),file:path.join(app.getPath('userData'),'updates.json'),onChange:emit,notify:notifyUpdate,record};
+  if(smoke)updateOptions.fetchImpl=async()=>({ok:true,json:async()=>[{tag_name:'v99.0.0',draft:false,prerelease:true,html_url:REPO+'/releases/tag/v99.0.0',assets:[{name:'rocket-snail-99.0.0-windows-x64.zip',state:'uploaded',size:1,browser_download_url:REPO+'/releases/download/v99.0.0/rocket-snail-99.0.0-windows-x64.zip'}]}]});
+  updater=new UpdateChecker(updateOptions);
   const webPreferences={preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:!smoke};
   const placement=store.data.desktopPlacement;displayId=placement.displayId==='primary'?screen.getPrimaryDisplay().id:Number(placement.displayId);({x,y}=restorePosition(area(),store.data.desktopPosition,store.data.settings.size));if(placement.edge!=='free')({x,y}=snapToEdge(area(),{x,y},store.data.settings.size,placement.edge));
   petWindow=new BrowserWindow({...layout(area(),x,store.data.settings.size,y).bounds,frame:false,transparent:true,alwaysOnTop:true,skipTaskbar:true,resizable:false,show:!smoke,webPreferences});
@@ -114,6 +120,8 @@ app.whenReady().then(async()=>{
   panelWindow.on('close',e=>{if(!app.quitting){e.preventDefault();panel(false);}});
   panelWindow.on('show',()=>{settingsOpen=true;frame();});panelWindow.on('hide',()=>{settingsOpen=false;frame();});
   handler('state',()=>state());handler('interactive',on=>panel(!!on));handler('quit',requestQuit);handler('diagnostics',openDiagnostics);
+  handler('update-check',()=>updater.check(true));handler('update-dismiss',()=>updater.dismiss());
+  handler('update-open',async kind=>{if(!['release','download'].includes(kind)||!updater.latest)throw Error('먼저 새 버전을 확인하세요.');const url=kind==='download'?updater.latest.download:updater.latest.url;if(smoke)smokeUpdateLink=url;else await shell.openExternal(url);return {opened:true};});
   handler('set-motion',setMotion);
   handler('set-startup',async enabled=>{if(typeof enabled!=='boolean')throw Error('자동 실행 설정을 확인하세요.');startupRegistration=smoke?{registered:enabled,enabled}:await startup.apply(app,process.execPath,enabled);store.data.settings.startup=enabled;store.save();emit();return startupRegistration;});
   handler('set-placement',setPlacement);
@@ -158,13 +166,14 @@ app.whenReady().then(async()=>{
   for(const event of ['resume','unlock-screen'])powerMonitor.on(event,()=>{record('session-resumed',{reason:event});armRecovery();showPet(event);});
   setInterval(()=>{try{keepAbove(petWindow,app.quitting);}catch(e){record('visibility-failed',{reason:'z-order-check',errorName:e.name,code:e.code});}},1500).unref();
   phase='running';record('running',{visible:petWindow.isVisible(),pid:process.pid});
+  updater.start();
   healthTimer=setInterval(()=>record('health',{visible:!petWindow.isDestroyed()&&petWindow.isVisible(),pid:process.pid,uptimeSeconds:Math.round(process.uptime())}),60000);healthTimer.unref();
   if(token)void client.start();
   if(process.argv.includes('--settings')||!token&&!process.argv.includes('--startup'))panel(true);
 }).catch(e=>fatalExit('startup-failed',e));
 app.on('child-process-gone',(_event,details)=>record('child-process-gone',{type:details.type,reason:details.reason,exitCode:details.exitCode}));
 app.on('quit',(_event,code)=>record('quit',{code}));
-app.on('before-quit',()=>{stopRecovery();app.quitting=true;clearInterval(healthTimer);clearTimeout(smokeTimeout);clearInterval(timer);client?.stop();tray?.destroy();});
+app.on('before-quit',()=>{stopRecovery();app.quitting=true;updater?.stop();updateNotice?.close();clearInterval(healthTimer);clearTimeout(smokeTimeout);clearInterval(timer);client?.stop();tray?.destroy();});
 app.on('window-all-closed',()=>{record('all-windows-closed');app.quit();});
 async function smokeTest(){
   if(process.argv.includes('--smoke-verify-profile')){
@@ -187,6 +196,15 @@ async function smokeTest(){
   const report=fs.readFileSync(path.join(app.getPath('userData'),'diagnostics.txt'),'utf8');
   if(!diagnosticOpened||!report.includes('진단 기록')||report.includes('fictional-user')||report.includes('chat.example.com'))throw Error('Diagnostic report verification failed');
   checks.diagnostics=true;
+  const pendingBefore=JSON.stringify(store.data.items);
+  const updateUI=await panelWindow.webContents.executeJavaScript("window.pet.checkUpdates().then(()=>new Promise(r=>requestAnimationFrame(()=>r({visible:!document.querySelector('#update-banner').hidden,text:document.querySelector('#update-text').textContent}))))");
+  if(!updateUI.visible||!updateUI.text.includes('v99.0.0'))throw Error('Update banner missing');
+  await panelWindow.webContents.executeJavaScript("window.pet.openUpdate('download')");
+  if(smokeUpdateLink!==REPO+'/releases/download/v99.0.0/rocket-snail-99.0.0-windows-x64.zip')throw Error('Update download link invalid');
+  fs.writeFileSync(path.join(artifacts,'update-banner.png'),(await panelWindow.webContents.capturePage()).toPNG());
+  await panelWindow.webContents.executeJavaScript("window.pet.dismissUpdate()");
+  if(updater.view().available||JSON.stringify(store.data.items)!==pendingBefore)throw Error('Update dismiss changed message queue');
+  checks.updates={banner:true,downloadLink:true,dismiss:true,messagesPreserved:true};
   if(Number(checks.size)!==store.data.settings.size)throw Error('크기 슬라이더 검증 실패');
   fs.writeFileSync(path.join(artifacts,'connection.png'),(await panelWindow.webContents.capturePage()).toPNG());
   clearInterval(timer);

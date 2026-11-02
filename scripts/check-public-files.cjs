@@ -2,7 +2,7 @@ const {execFileSync}=require('node:child_process');
 const git=(...args)=>execFileSync('git',args,{encoding:'utf8',maxBuffer:20*1024*1024});
 const retired=['docs/media/single-notification.png','docs/media/multiple-notifications.png','docs/media/snail-walking.gif','docs/media/snail-walking.mp4'];
 const files=git('ls-files','-z').split('\0').filter(Boolean);
-const unsafe=files.filter(p=>/(^|\/)(\.env(?:\..*)?|credential\.bin|state\.json|Local State|id_rsa|id_ed25519)$|\.(pfx|p12|pem)$/i.test(p)||retired.includes(p));
+const unsafe=files.filter(p=>/(^|\/)(\.env(?:\..*)?|credential\.bin|state\.json|updates\.json|diagnostics\.txt|Local State|id_rsa|id_ed25519)$|\.(pfx|p12|pem)$/i.test(p)||retired.includes(p));
 if(unsafe.length){console.error('Blocked: private profile or retired media is tracked.');process.exit(1);}
 // --objects also prints annotated tag objects even when no path matches.
 // Commit history alone correctly detects files added and later deleted.

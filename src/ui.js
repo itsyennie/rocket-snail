@@ -13,11 +13,18 @@ character.onpointerdown=e=>{if(e.button!==0||dragGesture)return;e.preventDefault
 async function finishPointerDrag(openIfClick){const gesture=dragGesture;if(!gesture||gesture.ending)return;gesture.ending=true;try{if(!await gesture.ready)return;const result=await action(()=>pet.endDrag());if(result&&!result.moved&&openIfClick)await pet.interactive(true);}finally{if(dragGesture===gesture)dragGesture=null;character.classList.remove('dragging');try{character.releasePointerCapture(gesture.pointerId)}catch{}}}
 character.onpointerup=()=>finishPointerDrag(true);character.onpointercancel=()=>finishPointerDrag(false);character.onlostpointercapture=()=>finishPointerDrag(false);window.addEventListener('blur',()=>finishPointerDrag(false));
 $('quit').onclick=()=>pet.quit();$('refresh').onclick=()=>action(()=>pet.refresh());
+$('update-check').onclick=()=>action(async()=>{const u=await pet.checkUpdates();toast(u.error?'업데이트를 확인하지 못했습니다. 네트워크를 확인하고 잠시 후 다시 시도하세요.':u.latest?`${u.latest.tag} 버전을 받을 수 있습니다.`:'현재보다 새로운 공개 버전이 없습니다.');});
+$('update-release').onclick=()=>action(()=>pet.openUpdate('release'));$('update-download').onclick=()=>action(()=>pet.openUpdate('download'));$('update-dismiss').onclick=()=>action(()=>pet.dismissUpdate());
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;editing=false;renderPanel();});
 const reasons={all:'모든 메시지',mention:'내 멘션','mention-all':'@all 전체 멘션','mention-here':'@here 그룹 멘션',keyword:'키워드 일치'};
 function items(){return Object.values(state?.items||{}).sort((a,b)=>new Date(a.ts)-new Date(b.ts));}
 let bubbleKey='';
 function renderChrome(){
+ const u=state.updates||{};const available=!!u.available;
+ $('update-banner').hidden=!available;$('update-badge').hidden=!available;$('update-check').disabled=!!u.busy;$('update-check').textContent=u.busy?'확인 중…':'업데이트 확인';
+ $('update-check').title=`현재 버전 ${u.current||''} · 테스트 버전 포함`;
+ $('update-text').textContent=available?`${u.latest.tag}${u.latest.prerelease?' 테스트 버전':''}이 나왔어요${u.error?' · 최근 확인 실패':''}`:'';
+ const updateStatus=document.querySelector('[data-update-status]');if(updateStatus)updateStatus.textContent=`현재 버전 ${u.current||''} · ${u.busy?'확인 중':u.error?'확인 실패 · 네트워크를 확인해 주세요':u.latest?u.latest.tag+' 다운로드 가능':u.lastChecked?'새 버전 없음':'자동 확인 대기'}`;
  const list=items(),stack=$('bubble');$('badge').textContent=list.length||'';$('count').textContent=list.length;$('status').textContent=state.status||'';stack.hidden=!list.length;
  const nextKey=JSON.stringify(list.map(i=>[i.id,i.room,i.text]));
  if(nextKey!==bubbleKey){
@@ -55,6 +62,7 @@ function renderPanel(){if(!panelMode||!state)return;document.querySelectorAll('n
   startup.onchange=async()=>{startup.disabled=true;const result=await action(()=>pet.setStartup(startup.checked));startup.checked=state.settings.startup;startup.disabled=false;startupNote.textContent=result?(result.enabled?'Windows 로그인 시 자동 실행이 등록되어 있습니다.':'Windows 자동 실행을 해제했습니다.'):'자동 실행 등록을 확인하지 못했습니다. 다시 시도해 주세요.';};
   const actions=el('div');actions.className='actions';actions.append(button('저장하고 연결',async()=>{await pet.save({settings:{...s,baseUrl:url.value,userId:user.value,size:Number(size.value),startup:state.settings.startup,motionEnabled:state.settings.motionEnabled!==false},newToken:token.value});token.value='';toast('설정을 저장했습니다. 계정이 입력되어 있으면 연결을 시작합니다.');},true),button('서버 접근 확인',async()=>{const r=await pet.probe();toast(`Rocket.Chat ${r.version} · 공개 서버 정보 접근 성공`)}));c.append(actions);
   const recovery=card();recovery.append(el('h2','자동 복구와 진단'),el('p','앱이 오류로 종료되면 자동으로 다시 실행합니다. 반복 오류는 잠시 대기한 뒤 재시도합니다. 직접 종료하면 다시 켜지지 않습니다.'),button('진단 기록 열기',async()=>{await pet.diagnostics();toast('오류와 복구 기록을 열었습니다.');}));root.append(recovery);
+  const updates=card(),updateStatus=el('p',`현재 버전 ${state.updates?.current||''}`);updateStatus.dataset.updateStatus='';updates.append(el('h2','앱 업데이트'),updateStatus,el('p','시작 후와 6시간마다 GitHub의 공개 버전을 확인합니다. 테스트 버전도 포함합니다. 새 버전은 상단 알림에서 ZIP을 받아 전체 압축을 푼 뒤 실행하세요. 계정과 설정은 유지됩니다.'));root.append(updates);
   const note=el('p','말풍선이나 메시지의 열기 버튼을 누르면 설치된 Rocket.Chat 데스크톱 앱에서 원본 메시지가 열립니다. 자동 정리는 서버의 읽음 정보를 받은 뒤에 이루어집니다.');note.className='note';root.append(note);
   root.append(button('달팽이 꾸미기',()=>document.querySelector('[data-tab=customize]').click()));
  } else if(tab==='rules'){

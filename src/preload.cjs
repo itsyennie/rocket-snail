@@ -8,5 +8,6 @@ contextBridge.exposeInMainWorld('pet',{
   setPlacement:placement=>ipcRenderer.invoke('set-placement',placement),
   setStartup:enabled=>ipcRenderer.invoke('set-startup',enabled),
   diagnostics:()=>ipcRenderer.invoke('diagnostics'),
+  checkUpdates:()=>ipcRenderer.invoke('update-check'),dismissUpdate:()=>ipcRenderer.invoke('update-dismiss'),openUpdate:kind=>ipcRenderer.invoke('update-open',kind),
   onState:f=>ipcRenderer.on('state',(_e,v)=>f(v)),onGeometry:f=>ipcRenderer.on('geometry',(_e,v)=>f(v))
 });

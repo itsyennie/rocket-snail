@@ -2,15 +2,18 @@ const {app,BrowserWindow,ipcMain,shell,safeStorage,screen,Tray,Menu,nativeImage,
 const fs=require('node:fs');const path=require('node:path');const {pathToFileURL}=require('node:url');
 const {Store}=require('./store.cjs');const {RocketClient}=require('./rocket.cjs');
 const {keepAbove}=require('./visibility.cjs');
+const {startRecovery}=require('./recovery.cjs');
+let stopRecovery=()=>{},healthTimer;
 const startup=require('./startup.cjs');let startupRegistration={registered:false,enabled:false};
 const {openDesktopMessage}=require('./desktop-link.cjs');const {validateSettings}=require('./settings.cjs');const {layout,beginDrag,moveDrag,savedPosition,restorePosition}=require('./desktop.cjs');
 const {normalize:normalizeAppearance}=require('./appearance.js');
 const {normalizePlacement,chooseDisplay,snapToEdge,advanceAlongEdge,orientation}=require('./placement.cjs');
-const smoke=process.argv.includes('--smoke-test');const artifacts=path.join(__dirname,'..','artifacts');
+const recoverySmoke=process.argv.includes('--smoke-recovery');
+const smoke=process.argv.includes('--smoke-test')||recoverySmoke;const artifacts=path.join(__dirname,'..','artifacts');
 const smokeTimeout=smoke?setTimeout(()=>{console.error('Smoke verification timed out');app.exit(1);},45000):null;
 app.setName('Rocket Pet');
 if(process.platform==='win32')app.setAppUserModelId('itsyennie.RocketSnail');
-if(smoke)app.setPath('userData',path.join(artifacts,'smoke-profile'));
+if(smoke)app.setPath('userData',path.join(artifacts,recoverySmoke?'recovery-profile':'smoke-profile'));
 else app.setPath('userData',path.join(app.getPath('appData'),'DexterRocketPet'));
 if(!smoke&&!app.requestSingleInstanceLock())app.exit(0);
 app.on('second-instance',(_event,args)=>{showPet('second-instance');if(panelWindow&&!args.includes('--startup'))panel(true);});
@@ -82,6 +85,8 @@ app.whenReady().then(async()=>{
   const placement=store.data.desktopPlacement;displayId=placement.displayId==='primary'?screen.getPrimaryDisplay().id:Number(placement.displayId);({x,y}=restorePosition(area(),store.data.desktopPosition,store.data.settings.size));if(placement.edge!=='free')({x,y}=snapToEdge(area(),{x,y},store.data.settings.size,placement.edge));
   petWindow=new BrowserWindow({...layout(area(),x,store.data.settings.size,y).bounds,frame:false,transparent:true,alwaysOnTop:true,skipTaskbar:true,resizable:false,show:!smoke,webPreferences});
   panelWindow=new BrowserWindow({width:780,height:740,minWidth:650,minHeight:540,title:'Rocket Pet · 메시지 확인 도우미',backgroundColor:'#f6f7f9',show:false,autoHideMenuBar:true,webPreferences});
+  // Windows logoff/shutdown must not be mistaken for a crash by the guardian.
+  for(const win of [petWindow,panelWindow])for(const event of ['query-session-end','session-end'])win.on(event,()=>{stopRecovery();record('session-ending');});
   configure(petWindow);configure(panelWindow);
   let rendererRecoveries=0;
   petWindow.on('blur',()=>{if(!smoke)setTimeout(()=>{try{keepAbove(petWindow,app.quitting);}catch(e){record('visibility-failed',{reason:'blur',errorName:e.name});}},100);});
@@ -122,16 +127,28 @@ app.whenReady().then(async()=>{
   const panelQuery={view:'panel'};if(process.argv.includes('--customize'))panelQuery.tab='customize';if(process.argv.includes('--placement'))panelQuery.tab='connection';
   await Promise.all([petWindow.loadFile(path.join(__dirname,'ui.html')),panelWindow.loadFile(path.join(__dirname,'ui.html'),{query:panelQuery})]);
   emit();timer=setInterval(frame,50);for(const event of ['display-added','display-removed','display-metrics-changed'])screen.on(event,refreshDisplays);
+  if(recoverySmoke){
+    stopRecovery=startRecovery({executable:process.execPath,profile:app.getPath('userData'),appPath:app.getAppPath(),packaged:app.isPackaged,record,extraArgs:['--smoke-recovery']});
+    if(process.argv.some(a=>a.startsWith('--recovery-history='))){
+      const pixelCharacter=await petWindow.webContents.executeJavaScript("new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r(!!document.querySelector('#snail-art svg')))))");
+      if(!pixelCharacter)throw Error('Recovered character missing');
+      fs.writeFileSync(path.join(artifacts,'recovery-result.json'),JSON.stringify({passed:true,version:app.getVersion(),restarted:true,pixelCharacter}));
+      app.quit();
+    }else setTimeout(()=>process.kill(process.pid,'SIGKILL'),1500);
+    return;
+  }
   if(smoke){await smokeTest();return;}
   for(const event of ['resume','unlock-screen'])powerMonitor.on(event,()=>{record('session-resumed',{reason:event});showPet(event);});
   setInterval(()=>{try{keepAbove(petWindow,app.quitting);}catch(e){record('visibility-failed',{reason:'z-order-check',errorName:e.name,code:e.code});}},1500).unref();
   record('running',{visible:petWindow.isVisible()});
+  try{stopRecovery=startRecovery({executable:process.execPath,profile:app.getPath('userData'),appPath:app.getAppPath(),packaged:app.isPackaged,record});}catch(e){record('recovery-unavailable',{errorName:e.name,code:e.code});}
+  healthTimer=setInterval(()=>record('health',{visible:!petWindow.isDestroyed()&&petWindow.isVisible()}),60000);healthTimer.unref();
   if(token)void client.start();
   if(process.argv.includes('--settings')||!token&&!process.argv.includes('--startup'))panel(true);
 }).catch(e=>{record('startup-failed',{errorName:e.name,code:e.code});console.error(e.message);if(!smoke)dialog.showErrorBox('Rocket Snail 시작 오류','앱을 시작하지 못했습니다. 저장된 설정은 유지되어 있습니다. 오류 기록은 %APPDATA%\\DexterRocketPet\\app.log에 남았습니다.');app.exit(1);});
 app.on('child-process-gone',(_event,details)=>record('child-process-gone',{type:details.type,reason:details.reason}));
 app.on('quit',(_event,code)=>record('quit',{code}));
-app.on('before-quit',()=>{app.quitting=true;clearTimeout(smokeTimeout);clearInterval(timer);client?.stop();tray?.destroy();});
+app.on('before-quit',()=>{stopRecovery();app.quitting=true;clearInterval(healthTimer);clearTimeout(smokeTimeout);clearInterval(timer);client?.stop();tray?.destroy();});
 app.on('window-all-closed',()=>{record('all-windows-closed');app.quit();});
 async function smokeTest(){
   if(process.argv.includes('--smoke-verify-profile')){
